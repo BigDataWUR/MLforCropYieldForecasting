@@ -6,6 +6,7 @@ the Jupiter notebook version of the implementation. The python script has
 been tested in Google Dataproc cluster. In general, running the python script
 or Jupiter notebook in other environments should be possible. The data has to
 be uploaded to some location and `data_path` should point to that location.
+Sample data will be available [here](https://doi.org/10.5281/zenodo.4312941).
 
 ## Google Colab Notes
 To run the script in Google Colab environment
