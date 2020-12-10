@@ -24,6 +24,17 @@ To run the script in Google Colab environment
    The configuration subsection allows you to change configuration 
    and rerun experiments.
 
+## Microsoft Azure Databricks Notes
+
+To run the script in Microsoft Azure Databricks environment, download the notebook and
+1. Create a Spark cluster.
+2. Add necessary libraries to the cluster using the libraries tab from the cluster details page.
+3. Import notebook to your workspace.
+4. In `Global Variables`, remove the `if (test_env == 'notebook'):` block meant for Colab environment.
+5. Use `dbfs` command line tool to upload data. 
+6. Set data path to something like `dbfs:/<dir>` and output path to something like `/dbfs/<dir>`.
+7. Attach your notebook to the Spark cluster and run.
+
 ## Google Dataproc Notes
 
 To run the script in Google Dataproc environment, download the python sript and
@@ -39,7 +50,7 @@ To run the script in Google Dataproc environment, download the python sript and
 `$ gsutil cp gs://dataproc-initialization-actions/python/pip-install.sh gs://ml-spark-1/scripts`
 
 6. Create cluster with initialization actions to install packages *pandas,
-   sklearn, matplotlib*.
+   sklearn, matplotlib, joblibspark*.
 7. Run python script uploaded to storage bucket:
 
 `$ gcloud dataproc jobs submit pyspark --cluster=ml-spark-cluster1 --region=europe-west1 \`
