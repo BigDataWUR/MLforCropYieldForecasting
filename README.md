@@ -39,7 +39,7 @@ To run the script in Microsoft Azure Databricks environment, download the notebo
 ## Google Dataproc Notes
 
 To run the script in Google Dataproc environment, download the python sript and
-1. Change test_env to dataproc.
+1. Change test_env to `cluster`.
 2. Remove Spark installation commands meant for Google Colab environment.
 3. Create a storage bucket: the notebook uses the name *ml-spark-1*.
 4. Upload data to storage bucket: create data/ and scripts/ directories inside
@@ -59,6 +59,8 @@ To run the script in Google Dataproc environment, download the python sript and
 `  gs://ml-spark-1/scripts/crop_yield_prediction.py -- \`
 
 `  --country NL --nuts-level NUTS2 --crop potatoes`
+
+`  --data-path gs://ml-spark-1/data/NUTS2-NL --output-path gs://ml-spark-1/output`
 
 Options supported by `crop_yield_prediction.py`:
 
