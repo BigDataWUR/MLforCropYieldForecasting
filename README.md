@@ -1,11 +1,11 @@
 # Implementation of Machine Learning Baseline for Crop Yield Prediction
 
 ## Test Environment
-Google Colab environment can be used to run the Jupiter notebook version
-of the implementation. The python script has been tested in Google Dataproc
-cluster. In general, running the python script or Jupiter notebook in other
-environments should be possible. The data has to be uploaded to some location
-and `data_path` should point to that location.
+Google Colab environment or Microsoft Azure Databricks can be used to run
+the Jupiter notebook version of the implementation. The python script has
+been tested in Google Dataproc cluster. In general, running the python script
+or Jupiter notebook in other environments should be possible. The data has to
+be uploaded to some location and `data_path` should point to that location.
 
 ## Google Colab Notes
 To run the script in Google Colab environment
