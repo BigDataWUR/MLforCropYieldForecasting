@@ -2231,8 +2231,6 @@ class CYPYieldTrendEstimator:
 """#### Create WOFOST, Meteo and Remote Sensing Features"""
 
 #%%writefile run_feature_design.py
-from pyspark.sql import Window
-
 def wofostMaxFeatureCols():
   """columns or indicators using max aggregation"""
   # must be in sync with crop calendar periods
@@ -2336,6 +2334,28 @@ def rsAvgFeatureCols():
 
   return avg_cols
 
+def convertFeaturesToPandas(ft_dfs, join_cols):
+  """Convert features to pandas and merge"""
+  train_ft_df = ft_dfs[0]
+  test_ft_df = ft_dfs[1]
+  train_ft_df = train_ft_df.withColumnRenamed('CAMPAIGN_YEAR', 'FYEAR')
+  test_ft_df = test_ft_df.withColumnRenamed('CAMPAIGN_YEAR', 'FYEAR')
+  pd_train_df = train_ft_df.toPandas()
+  pd_test_df = test_ft_df.toPandas()
+
+  return [pd_train_df, pd_test_df]
+
+def dropZeroColumns(pd_ft_dfs):
+  """Drop columns which have all zeros in training data"""
+  pd_train_df = pd_ft_dfs[0]
+  pd_test_df = pd_ft_dfs[1]
+
+  pd_train_df = pd_train_df.loc[:, (pd_train_df != 0.0).any(axis=0)]
+  pd_train_df = pd_train_df.dropna(axis=1)
+  pd_test_df = pd_test_df[pd_train_df.columns]
+
+  return [pd_train_df, pd_test_df]
+
 def printFeatureData(pd_feature_dfs, join_cols):
   for src in pd_feature_dfs:
     pd_train_fts = pd_feature_dfs[src][0]
@@ -2358,17 +2378,6 @@ def printFeatureData(pd_feature_dfs, join_cols):
       print(pd_train_fts[join_cols + ext_cols].head(5))
       print('\n', src, 'Features for Extreme Conditions: Test')
       print(pd_test_fts[join_cols + ext_cols].head(5))
-
-def convertFeaturesToPandas(ft_dfs, join_cols):
-  """Convert features to pandas and merge"""
-  train_ft_df = ft_dfs[0]
-  test_ft_df = ft_dfs[1]
-  train_ft_df = train_ft_df.withColumnRenamed('CAMPAIGN_YEAR', 'FYEAR')
-  test_ft_df = test_ft_df.withColumnRenamed('CAMPAIGN_YEAR', 'FYEAR')
-  pd_train_df = train_ft_df.toPandas()
-  pd_test_df = test_ft_df.toPandas()
-
-  return [pd_train_df, pd_test_df]
 
 def createFeatures(cyp_config, cyp_featurizer, train_test_dfs,
                    summary_dfs, log_fh):
@@ -2461,6 +2470,10 @@ def createFeatures(cyp_config, cyp_featurizer, train_test_dfs,
   pd_feature_dfs = {}
   for ft_src in pd_conversion_dict:
     pd_feature_dfs[ft_src] = convertFeaturesToPandas(pd_conversion_dict[ft_src], join_cols)
+
+  # Check and drop features with all zeros (possible in early season prediction).
+  for ft_src in pd_feature_dfs:
+    pd_feature_dfs[ft_src] = dropZeroColumns(pd_feature_dfs[ft_src])
 
   if (debug_level > 1):
     join_cols = ['IDREGION', 'FYEAR']
@@ -4458,7 +4471,7 @@ if (test_env == 'notebook'):
       'save_features' : 'N',
       'use_saved_features' : 'N',
       'save_predictions' : 'Y',
-      'use_saved_predictions' : 'Y',
+      'use_saved_predictions' : 'N',
       'compare_with_mcyfs' : 'Y',
       'debug_level' : 2,
   }
