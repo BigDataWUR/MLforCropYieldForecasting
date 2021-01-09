@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-import globals
+from .. import globals
 
 if (globals.test_env == 'pkg'):
   SparkT = globals.SparkT
@@ -10,10 +10,10 @@ if (globals.test_env == 'pkg'):
   sqlCtx = globals.sqlCtx
   run_tests = globals.run_tests
 
-  from util import getPredictionScores
-  from util import getPredictionFilename
-  from workflow.data_loading import CYPDataLoader
-  from workflow.data_preprocessing import CYPDataPreprocessor
+  from ..util import getPredictionScores
+  from ..util import getPredictionFilename
+  from ..workflow.data_loading import CYPDataLoader
+  from ..workflow.data_preprocessing import CYPDataPreprocessor
 
 def saveNUTS0Predictions(cyp_config, nuts0_ml_predictions):
   """Save predictions aggregated to NUTS0"""

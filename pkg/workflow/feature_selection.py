@@ -8,10 +8,10 @@ from sklearn.feature_selection import RFE
 from sklearn.model_selection import GridSearchCV
 from sklearn.utils import parallel_backend
 
-import globals
+from .. import globals
 
 if (globals.test_env == 'pkg'):
-  from util import printFeatures
+  from ..util import printFeatures
 
 class CYPFeatureSelector:
   def __init__(self, cyp_config, X_train, Y_train, custom_cv, all_features):

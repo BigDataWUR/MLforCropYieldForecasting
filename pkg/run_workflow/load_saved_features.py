@@ -1,11 +1,11 @@
-import globals
+import pandas as pd
+
+from .. import globals
 
 if (globals.test_env == 'pkg'):
   spark = globals.spark
 
-  from util import getFeatureFilename
-
-import pandas as pd
+  from ..util import getFeatureFilename
 
 def loadSavedFeaturesLabels(cyp_config):
   """Load saved features from a CSV file"""

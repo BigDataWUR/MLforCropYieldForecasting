@@ -1,11 +1,11 @@
 import pandas as pd
 
-import globals
+from .. import globals
 
 if (globals.test_env == 'pkg'):
   spark = globals.spark
 
-  from util import getPredictionFilename
+  from ..util import getPredictionFilename
 
 def loadSavedPredictions(cyp_config):
   """Load machine learning predictions from saved CSV file"""

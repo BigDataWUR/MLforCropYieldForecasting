@@ -8,14 +8,14 @@ def warn(*args, **kwargs):
 import warnings
 warnings.warn = warn
 
-import globals
+from .. import globals
 
 if (globals.test_env == 'pkg'):
-  from util import printFeatures
-  from util import getPredictionFilename
-  from workflow.train_test_split import CYPTrainTestSplitter
-  from workflow.feature_selection import CYPFeatureSelector
-  from workflow.algorithm_evaluation import CYPAlgorithmEvaluator
+  from ..util import printFeatures
+  from ..util import getPredictionFilename
+  from ..workflow.train_test_split import CYPTrainTestSplitter
+  from ..workflow.feature_selection import CYPFeatureSelector
+  from ..workflow.algorithm_evaluation import CYPAlgorithmEvaluator
 
 def getValidationSplits(cyp_config, pd_train_df, pd_test_df, log_fh):
   """Split features and label into training and test sets"""

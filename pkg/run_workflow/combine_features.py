@@ -1,9 +1,9 @@
-import globals
+from .. import globals
 
 if (globals.test_env == 'pkg'):
   sqlCtx = globals.sqlCtx
 
-  from util import getFeatureFilename
+  from ..util import getFeatureFilename
 
 def combineFeaturesLabels(cyp_config, prep_train_test_dfs, pd_feature_dfs,
                           join_cols, log_fh):

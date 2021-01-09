@@ -3,7 +3,7 @@ import functools
 from pyspark.sql import Window
 from sklearn.metrics import mean_squared_error
 
-import globals
+from .. import globals
 
 if (globals.test_env == 'pkg'):
   SparkT = globals.SparkT

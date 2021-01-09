@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-import globals
+from . import globals
 
 if (globals.test_env == 'pkg'):
   SparkT = globals.SparkT

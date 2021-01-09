@@ -1,8 +1,8 @@
-import globals
+from .. import globals
 
 if (globals.test_env == 'pkg'):
-  from config import CYPConfiguration
-  from workflow.data_loading import CYPDataLoader
+  from ..config import CYPConfiguration
+  from ..workflow.data_loading import CYPDataLoader
 
 class TestDataLoader():
   def __init__(self, spark):

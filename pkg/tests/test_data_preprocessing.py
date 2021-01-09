@@ -1,8 +1,8 @@
-import globals
+from .. import globals
 
 if (globals.test_env == 'pkg'):
-  from config import CYPConfiguration
-  from workflow.data_preprocessing import CYPDataPreprocessor
+  from ..config import CYPConfiguration
+  from ..workflow.data_preprocessing import CYPDataPreprocessor
 
 class TestDataPreprocessor():
   def __init__(self, spark):

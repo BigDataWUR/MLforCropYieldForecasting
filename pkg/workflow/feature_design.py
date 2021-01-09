@@ -3,14 +3,14 @@ import pandas as pd
 import numpy as np
 import functools
 
-import globals
+from .. import globals
 
 if (globals.test_env == 'pkg'):
   SparkT = globals.SparkT
   SparkF = globals.SparkF
 
-  from workflow.crop_calendar import getCountryCropCalendar
-  from workflow.crop_calendar import getCropCalendarPeriods
+  from .crop_calendar import getCountryCropCalendar
+  from .crop_calendar import getCropCalendarPeriods
 
 class CYPFeaturizer:
   def __init__(self, cyp_config):

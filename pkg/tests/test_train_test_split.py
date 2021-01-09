@@ -1,9 +1,9 @@
 import numpy as np
 
-import globals
+from .. import globals
 
 if (globals.test_env == 'pkg'):
-  from workflow.train_test_sets import CYPTrainTestSplitter
+  from ..workflow.train_test_split import CYPTrainTestSplitter
 
 class TestCustomTrainTestSplit:
   def __init__(self, yield_df):

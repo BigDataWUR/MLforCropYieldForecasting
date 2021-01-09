@@ -24,9 +24,9 @@ from sklearn.metrics import r2_score
 from sklearn.metrics import explained_variance_score
 from sklearn.metrics import median_absolute_error
 
-import globals
-from util import cropNameToID, cropIDToName
-from util import mean_absolute_percentage_error 
+from . import globals
+from .util import cropNameToID, cropIDToName
+from .util import mean_absolute_percentage_error 
 
 if (globals.test_env == 'pkg'):
   crop_id_dict = globals.crop_id_dict

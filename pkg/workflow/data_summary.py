@@ -1,7 +1,7 @@
 from pyspark.sql import Window
 import functools
 
-import globals
+from .. import globals
 
 if (globals.test_env == 'pkg'):
   SparkT = globals.SparkT
@@ -9,7 +9,7 @@ if (globals.test_env == 'pkg'):
   crop_name_dict = globals.crop_name_dict
   crop_id_dict = globals.crop_id_dict
  
-  from util import cropIDToName, cropNameToID
+  from ..util import cropIDToName, cropNameToID
 
 class CYPDataSummarizer:
   def __init__(self, cyp_config):

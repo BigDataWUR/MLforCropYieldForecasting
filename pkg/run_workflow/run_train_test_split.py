@@ -1,7 +1,7 @@
-import globals
+from .. import globals
 
 if (globals.test_env == 'pkg'):
-  from workflow.train_test_split import CYPTrainTestSplitter
+  from ..workflow.train_test_split import CYPTrainTestSplitter
 
 def printTrainTestSplits(train_df, test_df, src, order_cols):
   """Print Training and Test Splits"""

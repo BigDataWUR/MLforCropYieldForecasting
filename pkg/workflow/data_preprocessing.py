@@ -1,10 +1,10 @@
 from pyspark.sql import Window
 
-import globals
+from .. import globals
 
 if (globals.test_env == 'pkg'):
-  from util import cropNameToID, cropIDToName
-  from util import getYear, getDekad
+  from ..util import cropNameToID, cropIDToName
+  from ..util import getYear, getDekad
 
   SparkT = globals.SparkT
   SparkF = globals.SparkF
