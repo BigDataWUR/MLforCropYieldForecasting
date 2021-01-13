@@ -1,5 +1,5 @@
 build/
 dist/
-mlbpkg.egg-info/
+cypml.egg-info/
 __pycache__
 *.pyc
