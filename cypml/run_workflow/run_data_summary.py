@@ -1,4 +1,4 @@
-from .. import globals
+from ..common import globals
 
 if (globals.test_env == 'pkg'):
   SparkT = globals.SparkT

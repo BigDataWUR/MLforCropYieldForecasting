@@ -1,7 +1,7 @@
-from .. import globals
+from ..common import globals
 
 if (globals.test_env == 'pkg'):
-  from ..config import CYPConfiguration
+  from ..common.config import CYPConfiguration
   from ..workflow.data_loading import CYPDataLoader
 
 class TestDataLoader():

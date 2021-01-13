@@ -1,9 +1,9 @@
 import pandas as pd
 
-from .. import globals
+from ..common import globals
 
 if (globals.test_env == 'pkg'):
-  from ..config import CYPConfiguration
+  from ..common.config import CYPConfiguration
   from ..workflow.yield_trend import CYPYieldTrendEstimator
 
 class TestYieldTrendEstimator():

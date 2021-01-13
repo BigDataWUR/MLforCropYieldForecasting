@@ -6,11 +6,11 @@ from sklearn.linear_model import Ridge
 from sklearn.model_selection import GridSearchCV
 from sklearn.utils import parallel_backend
 
-from .. import globals
+from ..common import globals
 
 if (globals.test_env == 'pkg'):
-  from ..util import printFeatures
-  from ..util import getPredictionScores
+  from ..common.util import printFeatures
+  from ..common.util import getPredictionScores
 
 class CYPAlgorithmEvaluator:
   def __init__(self, cyp_config, custom_cv):

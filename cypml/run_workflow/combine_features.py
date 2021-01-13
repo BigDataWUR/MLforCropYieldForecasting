@@ -1,11 +1,10 @@
-from .. import globals
+from ..common import globals
 
 if (globals.test_env == 'pkg'):
-  sqlCtx = globals.sqlCtx
+  from ..common.util import getFeatureFilename
 
-  from ..util import getFeatureFilename
-
-def combineFeaturesLabels(cyp_config, prep_train_test_dfs, pd_feature_dfs,
+def combineFeaturesLabels(cyp_config, sqlCtx,
+                          prep_train_test_dfs, pd_feature_dfs,
                           join_cols, log_fh):
   """
   Combine wofost, meteo and soil with remote sensing. Combine centroids

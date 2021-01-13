@@ -1,8 +1,9 @@
 import numpy as np
 
-from .. import globals
+from ..common import globals
 
 if (globals.test_env == 'pkg'):
+  from ..common.config import CYPConfiguration
   from ..workflow.train_test_split import CYPTrainTestSplitter
 
 class TestCustomTrainTestSplit:

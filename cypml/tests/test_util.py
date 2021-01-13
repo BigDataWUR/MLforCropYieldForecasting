@@ -1,18 +1,17 @@
 import numpy as np
 
-from .. import globals
+from ..common import globals
 
 if (globals.test_env == 'pkg'):
-  spark = globals.spark
   crop_name_dict = globals.crop_name_dict
   crop_id_dict = globals.crop_id_dict
 
-  from ..util import getYear, getDekad, getMonth, getDay
-  from ..util import cropIDToName, cropNameToID
-  from ..util import printFeatures, plotTrend, plotTrueVSPredicted 
+  from ..common.util import getYear, getDekad, getMonth, getDay
+  from ..common.util import cropIDToName, cropNameToID
+  from ..common.util import printFeatures, plotTrend, plotTrueVSPredicted 
 
 class TestUtil():
-  def __init__(self):
+  def __init__(self, spark):
     self.good_date = spark.createDataFrame([(1, '19940102'),
                                           (2, '15831224')],
                                          ['ID', 'DATE'])

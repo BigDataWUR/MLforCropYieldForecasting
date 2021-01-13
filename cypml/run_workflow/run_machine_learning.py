@@ -8,11 +8,11 @@ def warn(*args, **kwargs):
 import warnings
 warnings.warn = warn
 
-from .. import globals
+from ..common import globals
 
 if (globals.test_env == 'pkg'):
-  from ..util import printFeatures
-  from ..util import getPredictionFilename
+  from ..common.util import printFeatures
+  from ..common.util import getPredictionFilename
   from ..workflow.train_test_split import CYPTrainTestSplitter
   from ..workflow.feature_selection import CYPFeatureSelector
   from ..workflow.algorithm_evaluation import CYPAlgorithmEvaluator
@@ -156,7 +156,7 @@ def getMachineLearningPredictions(cyp_config, pd_train_df, pd_test_df, log_fh):
 
   return ml_preds['test']
 
-def saveMLPredictions(cyp_config, pd_ml_predictions):
+def saveMLPredictions(cyp_config, sqlCtx, pd_ml_predictions):
   """Save ML predictions to a CSV file"""
   debug_level = cyp_config.getDebugLevel()
   crop = cyp_config.getCropName()

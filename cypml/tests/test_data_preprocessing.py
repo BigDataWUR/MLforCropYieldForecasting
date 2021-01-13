@@ -1,7 +1,7 @@
-from .. import globals
+from ..common import globals
 
 if (globals.test_env == 'pkg'):
-  from ..config import CYPConfiguration
+  from ..common.config import CYPConfiguration
   from ..workflow.data_preprocessing import CYPDataPreprocessor
 
 class TestDataPreprocessor():
@@ -157,9 +157,13 @@ class TestDataPreprocessor():
   def testPreprocessWofost(self):
     print('WOFOST data after preprocessing')
     print('--------------------------------')
-    self.wofost_df, self.crop_season = self.preprocessor.preprocessWofost(self.wofost_df,
-                                                                          6,
-                                                                          False)
+    self.wofost_df = self.wofost_df.filter(self.wofost_df['CROP_ID'] == 6).drop('CROP_ID')
+    self.crop_season = self.preprocessor.getCropSeasonInformation(self.wofost_df,
+                                                                  False)
+    self.wofost_df = self.preprocessor.preprocessWofost(self.wofost_df,
+                                                        self.crop_season,
+                                                        False)
+
     self.wofost_df.show(5)
     self.crop_season.show(5)
 

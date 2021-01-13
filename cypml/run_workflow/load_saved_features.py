@@ -1,13 +1,11 @@
 import pandas as pd
 
-from .. import globals
+from ..common import globals
 
 if (globals.test_env == 'pkg'):
-  spark = globals.spark
+  from ..common.util import getFeatureFilename
 
-  from ..util import getFeatureFilename
-
-def loadSavedFeaturesLabels(cyp_config):
+def loadSavedFeaturesLabels(cyp_config, spark):
   """Load saved features from a CSV file"""
   crop = cyp_config.getCropName()
   country = cyp_config.getCountryCode()

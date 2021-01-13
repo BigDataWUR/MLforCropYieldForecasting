@@ -1,4 +1,4 @@
-from .. import globals
+from ..common import globals
 
 if (globals.test_env == 'pkg'):
   from ..workflow.train_test_split import CYPTrainTestSplitter

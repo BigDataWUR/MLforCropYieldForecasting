@@ -1,16 +1,15 @@
-from .. import globals
+from ..common import globals
 
 if (globals.test_env == 'pkg'):
-  spark = globals.spark
   crop_name_dict = globals.crop_name_dict
   crop_id_dict = globals.crop_id_dict
 
-  from ..util import cropNameToID, cropIDToName
-  from ..config import CYPConfiguration
+  from ..common.util import cropNameToID, cropIDToName
+  from ..common.config import CYPConfiguration
   from ..workflow.data_summary import CYPDataSummarizer
 
 class TestDataSummarizer():
-  def __init__(self):
+  def __init__(self, spark):
     cyp_config = CYPConfiguration()
     cyp_config.setDebugLevel(2)
     self.data_summarizer = CYPDataSummarizer(cyp_config)

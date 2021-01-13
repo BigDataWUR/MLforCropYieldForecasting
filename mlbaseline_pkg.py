@@ -1,47 +1,60 @@
 import sys
 import argparse
 
-import pkg.globals as globals
+import pyspark
+from pyspark import SparkContext
+from pyspark import SparkConf
+from pyspark.sql import SparkSession
+from pyspark.sql import SQLContext
+
+from cypml.common import globals
 
 if (globals.test_env == 'pkg'):
-  from pkg.config import CYPConfiguration
-  from pkg.util import getLogFilename
-  from pkg.workflow.data_loading import CYPDataLoader
-  from pkg.workflow.data_preprocessing import CYPDataPreprocessor
-  from pkg.workflow.data_summary import CYPDataSummarizer
-  from pkg.workflow.feature_design import CYPFeaturizer
-  from pkg.workflow.yield_trend import CYPYieldTrendEstimator
+  from cypml.common.config import CYPConfiguration
+  from cypml.common.util import getLogFilename
+  from cypml.workflow.data_loading import CYPDataLoader
+  from cypml.workflow.data_preprocessing import CYPDataPreprocessor
+  from cypml.workflow.data_summary import CYPDataSummarizer
+  from cypml.workflow.feature_design import CYPFeaturizer
+  from cypml.workflow.yield_trend import CYPYieldTrendEstimator
 
-  from pkg.run_workflow.run_data_preprocessing import preprocessData
-  from pkg.run_workflow.run_data_summary import summarizeData
-  from pkg.run_workflow.run_feature_design import createFeatures
-  from pkg.run_workflow.run_trend_feature_design import createYieldTrendFeatures
-  from pkg.run_workflow.run_train_test_split import splitDataIntoTrainingTestSets
-  from pkg.run_workflow.combine_features import combineFeaturesLabels
-  from pkg.run_workflow.load_saved_features import loadSavedFeaturesLabels
-  from pkg.run_workflow.run_machine_learning import getMachineLearningPredictions
-  from pkg.run_workflow.run_machine_learning import saveMLPredictions
-  from pkg.run_workflow.load_saved_predictions import loadSavedPredictions
-  from pkg.run_workflow.compare_with_mcyfs import comparePredictionsWithMCYFS
+  from cypml.run_workflow.run_data_preprocessing import preprocessData
+  from cypml.run_workflow.run_data_summary import summarizeData
+  from cypml.run_workflow.run_feature_design import createFeatures
+  from cypml.run_workflow.run_trend_feature_design import createYieldTrendFeatures
+  from cypml.run_workflow.run_train_test_split import splitDataIntoTrainingTestSets
+  from cypml.run_workflow.combine_features import combineFeaturesLabels
+  from cypml.run_workflow.load_saved_features import loadSavedFeaturesLabels
+  from cypml.run_workflow.run_machine_learning import getMachineLearningPredictions
+  from cypml.run_workflow.run_machine_learning import saveMLPredictions
+  from cypml.run_workflow.load_saved_predictions import loadSavedPredictions
+  from cypml.run_workflow.compare_with_mcyfs import comparePredictionsWithMCYFS
 
-  from pkg.tests.test_util import TestUtil
-  from pkg.tests.test_data_loading import TestDataLoader 
-  from pkg.tests.test_data_preprocessing import TestDataPreprocessor 
-  from pkg.tests.test_data_summary import TestDataSummarizer 
-  from pkg.tests.test_yield_trend import TestYieldTrendEstimator 
+  from cypml.tests.test_util import TestUtil
+  from cypml.tests.test_data_loading import TestDataLoader 
+  from cypml.tests.test_data_preprocessing import TestDataPreprocessor 
+  from cypml.tests.test_data_summary import TestDataSummarizer 
+  from cypml.tests.test_yield_trend import TestYieldTrendEstimator 
 
 def main():
   if (globals.test_env == 'pkg'):
     test_env = globals.test_env
     run_tests = globals.run_tests
-    spark = globals.spark
-    sqlCtx = globals.sqlCtx
+
+  conf = SparkConf().setMaster('local[*]')
+  conf.set('spark.executor.memory', '12g')
+  conf.set('spark.driver.memory', '6g')
+  conf.set('spark.sql.execution.arrow.pyspark.enabled', True)
+
+  sc = SparkContext(conf=conf)
+  sqlContext = SQLContext(sc)
+  spark = sqlContext.sparkSession
 
   print('##################')
   print('# Configuration  #')
   print('##################')
 
-  parser = argparse.ArgumentParser(prog='main.py')
+  parser = argparse.ArgumentParser(prog='mlbaseline_pkg.py')
 
   # Some command-line argument names are slightly different
   # from configuration option names for brevity.
@@ -236,7 +249,7 @@ def main():
       print('#################')
 
       if (run_tests):
-        test_summarizer = TestDataSummarizer()
+        test_summarizer = TestDataSummarizer(spark)
         test_summarizer.runAllTests()
 
       cyp_summarizer = CYPDataSummarizer(cyp_config)
@@ -263,11 +276,12 @@ def main():
 
       # combine features
       join_cols = ['IDREGION', 'FYEAR']
-      pd_train_df, pd_test_df = combineFeaturesLabels(cyp_config, prep_train_test_dfs, pd_feature_dfs,
+      pd_train_df, pd_test_df = combineFeaturesLabels(cyp_config, sqlContext,
+                                                      prep_train_test_dfs, pd_feature_dfs,
                                                       join_cols, log_fh)
     # use saved features
     else:
-      pd_train_df, pd_test_df = loadSavedFeaturesLabels(cyp_config)
+      pd_train_df, pd_test_df = loadSavedFeaturesLabels(cyp_config, spark)
 
     print('###################################')
     print('# Machine Learning using sklearn  #')
@@ -276,16 +290,16 @@ def main():
     pd_ml_predictions = getMachineLearningPredictions(cyp_config, pd_train_df, pd_test_df, log_fh)
     save_predictions = cyp_config.savePredictions()
     if (save_predictions):
-      saveMLPredictions(cyp_config, pd_ml_predictions)
+      saveMLPredictions(cyp_config, sqlContext, pd_ml_predictions)
 
   # use saved predictions
   else:
-    pd_ml_predictions = loadSavedPredictions(cyp_config)
+    pd_ml_predictions = loadSavedPredictions(cyp_config, spark)
 
   # compare with MCYFS
   compareWithMCYFS = cyp_config.compareWithMCYFS()
   if (compareWithMCYFS):
-    comparePredictionsWithMCYFS(spark, cyp_config, pd_ml_predictions, log_fh)
+    comparePredictionsWithMCYFS(sqlContext, cyp_config, pd_ml_predictions, log_fh)
 
   log_fh.close()
 

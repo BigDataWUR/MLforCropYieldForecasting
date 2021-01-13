@@ -1,13 +1,11 @@
 import pandas as pd
 
-from .. import globals
+from ..common import globals
 
 if (globals.test_env == 'pkg'):
-  spark = globals.spark
+  from ..common.util import getPredictionFilename
 
-  from ..util import getPredictionFilename
-
-def loadSavedPredictions(cyp_config):
+def loadSavedPredictions(cyp_config, spark):
   """Load machine learning predictions from saved CSV file"""
   crop = cyp_config.getCropName()
   country = cyp_config.getCountryCode()

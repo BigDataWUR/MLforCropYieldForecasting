@@ -1,21 +1,19 @@
 import numpy as np
 import pandas as pd
 
-from .. import globals
+from ..common import globals
 
 if (globals.test_env == 'pkg'):
   SparkT = globals.SparkT
   SparkF = globals.SparkF
-  spark = globals.spark
-  sqlCtx = globals.sqlCtx
   run_tests = globals.run_tests
 
-  from ..util import getPredictionScores
-  from ..util import getPredictionFilename
+  from ..common.util import getPredictionScores
+  from ..common.util import getPredictionFilename
   from ..workflow.data_loading import CYPDataLoader
   from ..workflow.data_preprocessing import CYPDataPreprocessor
 
-def saveNUTS0Predictions(cyp_config, nuts0_ml_predictions):
+def saveNUTS0Predictions(cyp_config, sqlCtx, nuts0_ml_predictions):
   """Save predictions aggregated to NUTS0"""
   crop = cyp_config.getCropName()
   country = cyp_config.getCountryCode()
@@ -237,7 +235,7 @@ def getNUTS0Yield(pd_nuts0_yield_df, pred_year, print_debug):
 
   return pred_year_yield[0]
 
-def comparePredictionsWithMCYFS(spark, cyp_config, pd_ml_predictions, log_fh):
+def comparePredictionsWithMCYFS(sqlCtx, cyp_config, pd_ml_predictions, log_fh):
   """Compare ML Baseline predictions with MCYFS predictions"""
   # We need AREA_FRACTIONS, MCYFS yield predictions and NUTS0 Eurostat YIELD
   # for comparison with MCYFS
@@ -245,6 +243,7 @@ def comparePredictionsWithMCYFS(spark, cyp_config, pd_ml_predictions, log_fh):
   debug_level = cyp_config.getDebugLevel()
   alg_names = list(cyp_config.getEstimators().keys())
 
+  spark = sqlCtx.sparkSession
   data_dfs = getDataForMCYFSComparison(spark, cyp_config)
   pd_nuts0_yield_df = data_dfs['YIELD_NUTS0'].toPandas()
   pd_mcyfs_pred_df = data_dfs['YIELD_PRED_MCYFS'].toPandas()
@@ -321,4 +320,4 @@ def comparePredictionsWithMCYFS(spark, cyp_config, pd_ml_predictions, log_fh):
 
   save_predictions = cyp_config.savePredictions()
   if (save_predictions):
-    saveNUTS0Predictions(cyp_config, nuts0_pred_df)
+    saveNUTS0Predictions(cyp_config, sqlCtx, nuts0_pred_df)

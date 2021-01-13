@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import functools
 
-from .. import globals
+from ..common import globals
 
 if (globals.test_env == 'pkg'):
   SparkT = globals.SparkT

@@ -21,7 +21,7 @@ We use WOFOST crop growth indicators, weather variables, geographic information,
 6. Use *Runtime* -> *Run before* option to run all cells before **Set Configuration**.
 7. Run the remaining cells except **Python Script Main**. The configuration subsection allows you to change configuration and rerun experiments.
 
-## Global Variables
+## Global Variables and Spark Installation/Initialization
 
 Initialize Spark session and global variables. Package installation is required only in Google Colab.
 """
@@ -72,19 +72,22 @@ crop_name_dict = {
 
 import pyspark
 
-from pyspark import SparkContext
-from pyspark.sql import SparkSession
-from pyspark.sql import SQLContext
 from pyspark.sql import functions as SparkF
 from pyspark.sql import types as SparkT
 
-SparkContext.setSystemProperty('spark.executor.memory', '12g')
-SparkContext.setSystemProperty('spark.driver.memory', '6g')
-spark = SparkSession.builder.master("local[*]").getOrCreate()
-spark.conf.set("spark.sql.execution.arrow.pyspark.enabled", "true")
+from pyspark import SparkContext
+from pyspark import SparkConf
+from pyspark.sql import SparkSession
+from pyspark.sql import SQLContext
 
-sc = SparkContext.getOrCreate()
-sqlCtx = SQLContext(sc)
+conf = SparkConf().setMaster('local[*]')
+conf.set('spark.executor.memory', '12g')
+conf.set('spark.driver.memory', '6g')
+conf.set('spark.sql.execution.arrow.pyspark.enabled', True)
+
+sc = SparkContext(conf=conf)
+sqlContext = SQLContext(sc)
+spark = sqlContext.sparkSession
 
 """## Utility Functions"""
 
@@ -2522,7 +2525,8 @@ Combine wofost, meteo and soil with remote sensing. Combine with centroids or yi
 """
 
 #%%writefile combine_features.py
-def combineFeaturesLabels(cyp_config, prep_train_test_dfs, pd_feature_dfs,
+def combineFeaturesLabels(cyp_config, sqlCtx,
+                          prep_train_test_dfs, pd_feature_dfs,
                           join_cols, log_fh):
   """
   Combine wofost, meteo and soil with remote sensing. Combine centroids
@@ -2654,7 +2658,7 @@ def combineFeaturesLabels(cyp_config, prep_train_test_dfs, pd_feature_dfs,
 #%%writefile load_saved_features.py
 import pandas as pd
 
-def loadSavedFeaturesLabels(cyp_config):
+def loadSavedFeaturesLabels(cyp_config, spark):
   """Load saved features from a CSV file"""
   crop = cyp_config.getCropName()
   country = cyp_config.getCountryCode()
@@ -3385,7 +3389,7 @@ def getMachineLearningPredictions(cyp_config, pd_train_df, pd_test_df, log_fh):
 
   return ml_preds['test']
 
-def saveMLPredictions(cyp_config, pd_ml_predictions):
+def saveMLPredictions(cyp_config, sqlCtx, pd_ml_predictions):
   """Save ML predictions to a CSV file"""
   debug_level = cyp_config.getDebugLevel()
   crop = cyp_config.getCropName()
@@ -3419,7 +3423,7 @@ def saveMLPredictions(cyp_config, pd_ml_predictions):
 #%%writefile load_saved_predictions.py
 import pandas as pd
 
-def loadSavedPredictions(cyp_config):
+def loadSavedPredictions(cyp_config, spark):
   """Load machine learning predictions from saved CSV file"""
   crop = cyp_config.getCropName()
   country = cyp_config.getCountryCode()
@@ -3452,7 +3456,7 @@ def loadSavedPredictions(cyp_config):
 import numpy as np
 import pandas as pd
 
-def saveNUTS0Predictions(cyp_config, nuts0_ml_predictions):
+def saveNUTS0Predictions(cyp_config, sqlCtx, nuts0_ml_predictions):
   """Save predictions aggregated to NUTS0"""
   crop = cyp_config.getCropName()
   country = cyp_config.getCountryCode()
@@ -3674,7 +3678,7 @@ def getNUTS0Yield(pd_nuts0_yield_df, pred_year, print_debug):
 
   return pred_year_yield[0]
 
-def comparePredictionsWithMCYFS(spark, cyp_config, pd_ml_predictions, log_fh):
+def comparePredictionsWithMCYFS(sqlCtx, cyp_config, pd_ml_predictions, log_fh):
   """Compare ML Baseline predictions with MCYFS predictions"""
   # We need AREA_FRACTIONS, MCYFS yield predictions and NUTS0 Eurostat YIELD
   # for comparison with MCYFS
@@ -3682,6 +3686,7 @@ def comparePredictionsWithMCYFS(spark, cyp_config, pd_ml_predictions, log_fh):
   debug_level = cyp_config.getDebugLevel()
   alg_names = list(cyp_config.getEstimators().keys())
 
+  spark = sqlContext.sparkSession
   data_dfs = getDataForMCYFSComparison(spark, cyp_config)
   pd_nuts0_yield_df = data_dfs['YIELD_NUTS0'].toPandas()
   pd_mcyfs_pred_df = data_dfs['YIELD_PRED_MCYFS'].toPandas()
@@ -3758,7 +3763,7 @@ def comparePredictionsWithMCYFS(spark, cyp_config, pd_ml_predictions, log_fh):
 
   save_predictions = cyp_config.savePredictions()
   if (save_predictions):
-    saveNUTS0Predictions(cyp_config, nuts0_pred_df)
+    saveNUTS0Predictions(cyp_config, sqlCtx, nuts0_pred_df)
 
 """## Tests
 
@@ -4091,9 +4096,13 @@ class TestDataPreprocessor():
   def testPreprocessWofost(self):
     print('WOFOST data after preprocessing')
     print('--------------------------------')
-    self.wofost_df, self.crop_season = self.preprocessor.preprocessWofost(self.wofost_df,
-                                                                          6,
-                                                                          False)
+    self.wofost_df = self.wofost_df.filter(self.wofost_df['CROP_ID'] == 6).drop('CROP_ID')
+    self.crop_season = self.preprocessor.getCropSeasonInformation(self.wofost_df,
+                                                                  False)
+    self.wofost_df = self.preprocessor.preprocessWofost(self.wofost_df,
+                                                        self.crop_season,
+                                                        False)
+
     self.wofost_df.show(5)
     self.crop_season.show(5)
 
@@ -4169,7 +4178,7 @@ class TestDataPreprocessor():
 
 #%%writefile test_data_summary.py
 class TestDataSummarizer():
-  def __init__(self):
+  def __init__(self, spark):
     cyp_config = CYPConfiguration()
     cyp_config.setDebugLevel(2)
     self.data_summarizer = CYPDataSummarizer(cyp_config)
@@ -4470,8 +4479,8 @@ if (test_env == 'notebook'):
       'early_season_end_dekad' : 0,
       'save_features' : 'N',
       'use_saved_features' : 'N',
-      'save_predictions' : 'Y',
-      'use_saved_predictions' : 'N',
+      'save_predictions' : 'N',
+      'use_saved_predictions' : 'Y',
       'compare_with_mcyfs' : 'Y',
       'debug_level' : 2,
   }
@@ -4554,16 +4563,13 @@ if ((test_env == 'notebook') and
   print('#################')
 
   if (run_tests):
-    test_summarizer = TestDataSummarizer()
+    test_summarizer = TestDataSummarizer(spark)
     test_summarizer.runAllTests()
 
   cyp_summarizer = CYPDataSummarizer(cyp_config)
   summary_dfs = summarizeData(cyp_config, cyp_summarizer, prep_train_test_dfs)
 
-"""### Create Features
-
-#### WOFOST, Meteo and Remote Sensing Features
-"""
+"""### Create Features"""
 
 if ((test_env == 'notebook') and
     (not use_saved_predictions) and
@@ -4574,24 +4580,19 @@ if ((test_env == 'notebook') and
   print('###################')
 
   cyp_featurizer = CYPFeaturizer(cyp_config)
+  # WOFOST, Meteo and Remote Sensing Features
   pd_feature_dfs = createFeatures(cyp_config, cyp_featurizer,
                                   prep_train_test_dfs, summary_dfs, log_fh)
 
-"""#### Yield Trend Features"""
-
-if ((test_env == 'notebook') and
-    (not use_saved_predictions) and
-    (not use_saved_features) and
-    (use_yield_trend)):
-
-  yield_train_df = prep_train_test_dfs['YIELD'][0]
-  yield_test_df = prep_train_test_dfs['YIELD'][1]
-
-  if (run_tests):
-    test_yield_trend = TestYieldTrendEstimator(yield_train_df)
-    test_yield_trend.runAllTests()
-
+  # trend features
   if (use_yield_trend):
+    yield_train_df = prep_train_test_dfs['YIELD'][0]
+    yield_test_df = prep_train_test_dfs['YIELD'][1]
+
+    if (run_tests):
+      test_yield_trend = TestYieldTrendEstimator(yield_train_df)
+      test_yield_trend.runAllTests()
+
     cyp_trend_est = CYPYieldTrendEstimator(cyp_config)
     pd_yield_train_ft, pd_yield_test_ft = createYieldTrendFeatures(cyp_config, cyp_trend_est,
                                                                    yield_train_df, yield_test_df,
@@ -4605,16 +4606,9 @@ if ((test_env == 'notebook') and
     (not use_saved_features)):
 
   join_cols = ['IDREGION', 'FYEAR']
-  pd_train_df, pd_test_df = combineFeaturesLabels(cyp_config, prep_train_test_dfs, pd_feature_dfs,
+  pd_train_df, pd_test_df = combineFeaturesLabels(cyp_config, sqlContext,
+                                                  prep_train_test_dfs, pd_feature_dfs,
                                                   join_cols, log_fh)
-
-"""### Load Saved Features and Labels"""
-
-if ((test_env == 'notebook') and
-    (not use_saved_predictions) and
-    (use_saved_features)):
-
-    pd_train_df, pd_test_df = loadSavedFeaturesLabels(cyp_config)
 
 """### Apply Machine Learning using scikit learn
 
@@ -4623,27 +4617,27 @@ if ((test_env == 'notebook') and
 if ((test_env == 'notebook') and
     (not use_saved_predictions)):
 
-  print('###################################')
+  if (use_saved_features):
+    pd_train_df, pd_test_df = loadSavedFeaturesLabels(cyp_config, spark)
+
+  print('\n###################################')
   print('# Machine Learning using sklearn  #')
   print('###################################')
 
   pd_ml_predictions = getMachineLearningPredictions(cyp_config, pd_train_df, pd_test_df, log_fh)
   save_predictions = cyp_config.savePredictions()
   if (save_predictions):
-    saveMLPredictions(cyp_config, pd_ml_predictions)
-
-"""### Load Saved ML Predictions"""
-
-if (test_env == 'notebook'):
-  if (use_saved_predictions):
-    pd_ml_predictions = loadSavedPredictions(cyp_config)
+    saveMLPredictions(cyp_config, sqlContext, pd_ml_predictions)
 
 """### Compare Predictions with JRC Predictions"""
 
 if (test_env == 'notebook'):
+  if (use_saved_predictions):
+    pd_ml_predictions = loadSavedPredictions(cyp_config, spark)
+
   compareWithMCYFS = cyp_config.compareWithMCYFS()
   if (compareWithMCYFS):
-    comparePredictionsWithMCYFS(spark, cyp_config, pd_ml_predictions, log_fh)
+    comparePredictionsWithMCYFS(sqlContext, cyp_config, pd_ml_predictions, log_fh)
 
   log_fh.close()
 
@@ -4856,7 +4850,7 @@ def main():
       print('#################')
 
       if (run_tests):
-        test_summarizer = TestDataSummarizer()
+        test_summarizer = TestDataSummarizer(spark)
         test_summarizer.runAllTests()
 
       cyp_summarizer = CYPDataSummarizer(cyp_config)
@@ -4883,12 +4877,13 @@ def main():
 
       # combine features
       join_cols = ['IDREGION', 'FYEAR']
-      pd_train_df, pd_test_df = combineFeaturesLabels(cyp_config, prep_train_test_dfs, pd_feature_dfs,
+      pd_train_df, pd_test_df = combineFeaturesLabels(cyp_config, sqlContext,
+                                                      prep_train_test_dfs, pd_feature_dfs,
                                                       join_cols, log_fh)
 
     # use saved features
     else:
-      pd_train_df, pd_test_df = loadSavedFeaturesLabels(cyp_config)
+      pd_train_df, pd_test_df = loadSavedFeaturesLabels(cyp_config, spark)
 
     print('###################################')
     print('# Machine Learning using sklearn  #')
@@ -4897,16 +4892,16 @@ def main():
     pd_ml_predictions = getMachineLearningPredictions(cyp_config, pd_train_df, pd_test_df, log_fh)
     save_predictions = cyp_config.savePredictions()
     if (save_predictions):
-      saveMLPredictions(cyp_config, pd_ml_predictions)
+      saveMLPredictions(cyp_config, sqlContext, pd_ml_predictions)
 
   # use saved predictions
   else:
-    pd_ml_predictions = loadSavedPredictions(cyp_config)
+    pd_ml_predictions = loadSavedPredictions(cyp_config, spark)
 
   # compare with MCYFS
   compareWithMCYFS = cyp_config.compareWithMCYFS()
   if (compareWithMCYFS):
-    comparePredictionsWithMCYFS(spark, cyp_config, pd_ml_predictions, log_fh)
+    comparePredictionsWithMCYFS(sqlContext, cyp_config, pd_ml_predictions, log_fh)
 
   log_fh.close()
 

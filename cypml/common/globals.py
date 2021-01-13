@@ -43,16 +43,5 @@ crop_name_dict = {
 
 import pyspark
 
-from pyspark import SparkContext
-from pyspark.sql import SparkSession
-from pyspark.sql import SQLContext
 from pyspark.sql import functions as SparkF
 from pyspark.sql import types as SparkT
-
-SparkContext.setSystemProperty('spark.executor.memory', '12g')
-SparkContext.setSystemProperty('spark.driver.memory', '6g')
-spark = SparkSession.builder.master("local[*]").getOrCreate()
-spark.conf.set("spark.sql.execution.arrow.pyspark.enabled", "true")
-
-sc = SparkContext.getOrCreate()
-sqlCtx = SQLContext(sc)
