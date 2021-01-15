@@ -12,6 +12,12 @@ if (globals.test_env == 'pkg'):
   from ..common.util import getPredictionFilename
   from ..workflow.data_loading import CYPDataLoader
   from ..workflow.data_preprocessing import CYPDataPreprocessor
+  from ..workflow.data_summary import CYPDataSummarizer
+
+  from ..tests.test_util import TestUtil
+  from ..tests.test_data_loading import TestDataLoader 
+  from ..tests.test_data_preprocessing import TestDataPreprocessor 
+  from ..tests.test_data_summary import TestDataSummarizer 
 
 def saveNUTS0Predictions(cyp_config, sqlCtx, nuts0_ml_predictions):
   """Save predictions aggregated to NUTS0"""
@@ -42,7 +48,7 @@ def saveNUTS0Predictions(cyp_config, sqlCtx, nuts0_ml_predictions):
   #                     .write.option('header','true')\
   #                     .mode("overwrite").csv(save_pred_path)
 
-def getDataForMCYFSComparison(spark, cyp_config):
+def getDataForMCYFSComparison(spark, cyp_config, test_years):
   """Load and preprocess data for MCYFS comparison"""
   data_path = cyp_config.getDataPath()
   crop_id = cyp_config.getCropID()
@@ -59,7 +65,7 @@ def getDataForMCYFSComparison(spark, cyp_config):
   }
 
   if (run_tests):
-    test_util = TestUtil()
+    test_util = TestUtil(spark)
     test_util.runAllTests()
 
   print('##############')
@@ -95,6 +101,7 @@ def getDataForMCYFSComparison(spark, cyp_config):
   for i in range(len(area_dfs)):
     af_df = area_dfs[i]
     af_df = cyp_preprocessor.preprocessAreaFractions(af_df, crop_id)
+    af_df = af_df.filter(af_df['FYEAR'].isin(test_years))
     area_dfs[i] = af_df
 
   if (debug_level > 1):
@@ -102,6 +109,7 @@ def getDataForMCYFSComparison(spark, cyp_config):
     nuts0_yield_df.show(10)
 
   nuts0_yield_df = cyp_preprocessor.preprocessYield(nuts0_yield_df, crop_id)
+  nuts0_yield_df = nuts0_yield_df.filter(nuts0_yield_df['FYEAR'].isin(test_years))
   if (debug_level > 1):
     print('NUTS0 Yield after preprocessing')
     nuts0_yield_df.show(10)
@@ -111,6 +119,7 @@ def getDataForMCYFSComparison(spark, cyp_config):
     mcyfs_yield_df.show(10)
 
   mcyfs_yield_df = cyp_preprocessor.preprocessYieldMCYFS(mcyfs_yield_df, crop_id)
+  mcyfs_yield_df = mcyfs_yield_df.filter(mcyfs_yield_df['FYEAR'].isin(test_years))
   if (debug_level > 1):
     print('MCYFS yield predictions after preprocessing')
     mcyfs_yield_df.show(10)
@@ -259,9 +268,11 @@ def comparePredictionsWithMCYFS(sqlCtx, cyp_config, pd_ml_predictions, log_fh):
   country_code = cyp_config.getCountryCode()
   debug_level = cyp_config.getDebugLevel()
   alg_names = list(cyp_config.getEstimators().keys())
+  test_years = list(pd_ml_predictions['FYEAR'].unique())
+  early_season_prediction = cyp_config.earlySeasonPrediction()
 
   spark = sqlCtx.sparkSession
-  data_dfs = getDataForMCYFSComparison(spark, cyp_config)
+  data_dfs = getDataForMCYFSComparison(spark, cyp_config, test_years)
   pd_dvs_summary = data_dfs['WOFOST_DVS'].toPandas()
   pd_nuts0_yield_df = data_dfs['YIELD_NUTS0'].toPandas()
   pd_mcyfs_pred_df = data_dfs['YIELD_PRED_MCYFS'].toPandas()

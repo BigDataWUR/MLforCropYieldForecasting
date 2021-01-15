@@ -163,7 +163,7 @@ def main():
                           help=arg_config['help'])
 
   if (run_tests):
-    test_util = TestUtil()
+    test_util = TestUtil(spark)
     test_util.runAllTests()
 
   args = parser.parse_args()
