@@ -83,7 +83,7 @@ class CYPConfiguration:
         'use_centroids' : 'Use centroid coordinates and distance to coast',
         'use_remote_sensing' : 'Use remote sensing data (FAPAR)',
         'early_season_prediction' : 'Predict yield early in the season',
-        'early_season_end_dekad' : 'End dekad for early season prediction',
+        'early_season_end_dekad' : 'Early season end dekad relative to harvest',
         'data_path' : 'Path to all input data. Default is current directory.',
         'output_path' : 'Path to all output files. Default is current directory.',
         'save_features' : 'Save features to a CSV file',

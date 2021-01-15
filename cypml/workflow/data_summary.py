@@ -16,7 +16,10 @@ class CYPDataSummarizer:
     self.verbose = cyp_config.getDebugLevel()
 
   def wofostDVSSummary(self, wofost_df, early_season_end=None):
-    """Summary of crop calendar based on DVS"""
+    """
+    Summary of crop calendar based on DVS.
+    Early season end is relative to end of the season, hence a negative number.
+    """
     join_cols = ['IDREGION', 'CAMPAIGN_YEAR']
     dvs_summary = wofost_df.select(join_cols).distinct()
 
@@ -26,24 +29,35 @@ class CYPDataSummarizer:
     wofost_df = wofost_df.withColumn('VALUE', wofost_df['DVS'])
     wofost_df = wofost_df.withColumn('PREV', SparkF.lag(wofost_df['VALUE']).over(my_window))
     wofost_df = wofost_df.withColumn('DIFF', SparkF.when(SparkF.isnull(wofost_df['PREV']), 0)\
-                                 .otherwise(wofost_df['VALUE'] - wofost_df['PREV']))
-    del_cols = ['VALUE', 'PREV', 'DIFF', 'EARLY_SEASON_END']
-    if (early_season_end is None):
-      wofost_df = wofost_df.withColumn('EARLY_SEASON_END', SparkF.lit(36))
-    else:
-      wofost_df = wofost_df.withColumn('EARLY_SEASON_END',
-                                       wofost_df['CAMPAIGN_DEKAD'] - wofost_df['DEKAD'] + early_season_end)
+                                     .otherwise(wofost_df['VALUE'] - wofost_df['PREV']))
+    wofost_df = wofost_df.withColumn('SEASON_ALIGN', wofost_df['CAMPAIGN_DEKAD'] - wofost_df['DEKAD'])
 
+    del_cols = ['VALUE', 'PREV', 'DIFF']
     dvs_summary = dvs_summary.join(wofost_df.filter(wofost_df['VALUE'] > 0.0).groupBy(join_cols)\
                                    .agg(SparkF.min('CAMPAIGN_DEKAD').alias('START_DVS')), join_cols)
-    dvs_summary = dvs_summary.join(wofost_df.filter(wofost_df.DVS >= 100).groupBy(join_cols)\
+    dvs_summary = dvs_summary.join(wofost_df.filter(wofost_df['DVS'] >= 100).groupBy(join_cols)\
                                    .agg(SparkF.min('CAMPAIGN_DEKAD').alias('START_DVS1')), join_cols)
-    dvs_summary = dvs_summary.join(wofost_df.filter(wofost_df.DVS >= 200).groupBy(join_cols)\
+    dvs_summary = dvs_summary.join(wofost_df.filter(wofost_df['DVS'] >= 200).groupBy(join_cols)\
                                    .agg(SparkF.min('CAMPAIGN_DEKAD').alias('START_DVS2')), join_cols)
-    dvs_summary = dvs_summary.join(wofost_df.groupBy(join_cols)\
-                                   .agg(SparkF.max('EARLY_SEASON_END').alias('EARLY_SEASON_END')), join_cols)
+    dvs_summary = dvs_summary.join(wofost_df.filter(wofost_df['DVS'] >= 200).groupBy(join_cols)\
+                                   .agg(SparkF.min('DEKAD').alias('HARVEST')), join_cols)
+    dvs_summary = dvs_summary.join(wofost_df.filter(wofost_df['DVS'] >= 200).groupBy(join_cols)\
+                                   .agg(SparkF.max('SEASON_ALIGN').alias('SEASON_ALIGN')), join_cols)
+
+    # Calendar year end season and early season dekads for comparing with MCYFS
+    # Campaign year early season dekad to filter data during feature design
+    dvs_summary = dvs_summary.withColumn('CALENDAR_END_SEASON', dvs_summary['HARVEST'] + 1)
+    dvs_summary = dvs_summary.withColumn('CAMPAIGN_EARLY_SEASON',
+                                         dvs_summary['CALENDAR_END_SEASON'] + dvs_summary['SEASON_ALIGN'])
+    if (early_season_end is not None):
+      dvs_summary = dvs_summary.withColumn('CALENDAR_EARLY_SEASON',
+                                         dvs_summary['CALENDAR_END_SEASON'] + early_season_end)
+      dvs_summary = dvs_summary.withColumn('CAMPAIGN_EARLY_SEASON',
+                                           dvs_summary['CAMPAIGN_EARLY_SEASON'] + early_season_end)
 
     wofost_df = wofost_df.drop(*del_cols)
+    dvs_summary = dvs_summary.drop('HARVEST', 'SEASON_ALIGN')
+
     return dvs_summary
 
   def indicatorsSummary(self, df, min_cols, max_cols, avg_cols):

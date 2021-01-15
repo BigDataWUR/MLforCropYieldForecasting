@@ -10,60 +10,60 @@ def getCropCalendarPeriods(df):
   """Periods for per year crop calendar"""
   # (maximum of 4 months = 12 dekads).
   # Subtracting 11 because both ends of the period are included.
-  # p0 : if EARLY_SEASON_END > df.START_DVS
+  # p0 : if CAMPAIGN_EARLY_SEASON > df.START_DVS
   #        START_DVS - 11 to START_DVS
   #      else
-  #        START_DVS - 11 to EARLY_SEASON_END
-  p0_filter = SparkF.when(df.EARLY_SEASON_END > df.START_DVS,
+  #        START_DVS - 11 to CAMPAIGN_EARLY_SEASON
+  p0_filter = SparkF.when(df.CAMPAIGN_EARLY_SEASON > df.START_DVS,
                           (df.CAMPAIGN_DEKAD >= (df.START_DVS - 11)) &
                           (df.CAMPAIGN_DEKAD <= df.START_DVS))\
                           .otherwise((df.CAMPAIGN_DEKAD >= (df.START_DVS - 11)) &
-                                     (df.CAMPAIGN_DEKAD <= df.EARLY_SEASON_END))
-  # p1 : if EARLY_SEASON_END > (df.START_DVS + 1)
+                                     (df.CAMPAIGN_DEKAD <= df.CAMPAIGN_EARLY_SEASON))
+  # p1 : if CAMPAIGN_EARLY_SEASON > (df.START_DVS + 1)
   #        (START_DVS - 1) to (START_DVS + 1)
   #      else
-  #        (START_DVS - 1) to EARLY_SEASON_END
-  p1_filter = SparkF.when(df.EARLY_SEASON_END > (df.START_DVS + 1),
+  #        (START_DVS - 1) to CAMPAIGN_EARLY_SEASON
+  p1_filter = SparkF.when(df.CAMPAIGN_EARLY_SEASON > (df.START_DVS + 1),
                           (df.CAMPAIGN_DEKAD >= (df.START_DVS - 1)) &
                           (df.CAMPAIGN_DEKAD <= (df.START_DVS + 1)))\
                           .otherwise((df.CAMPAIGN_DEKAD >= (df.START_DVS - 1)) &
-                                     (df.CAMPAIGN_DEKAD <= df.EARLY_SEASON_END))
-  # p2 : if EARLY_SEASON_END > df.START_DVS1
+                                     (df.CAMPAIGN_DEKAD <= df.CAMPAIGN_EARLY_SEASON))
+  # p2 : if CAMPAIGN_EARLY_SEASON > df.START_DVS1
   #        START_DVS to START_DVS1
   #      else
-  #        START_DVS to EARLY_SEASON_END
-  p2_filter = SparkF.when(df.EARLY_SEASON_END > df.START_DVS1,
+  #        START_DVS to CAMPAIGN_EARLY_SEASON
+  p2_filter = SparkF.when(df.CAMPAIGN_EARLY_SEASON > df.START_DVS1,
                           (df.CAMPAIGN_DEKAD >= df.START_DVS) &
                           (df.CAMPAIGN_DEKAD <= df.START_DVS1))\
                           .otherwise((df.CAMPAIGN_DEKAD >= df.START_DVS) &
-                                     (df.CAMPAIGN_DEKAD <= df.EARLY_SEASON_END))
-  # p3 : if EARLY_SEASON_END > (df.START_DVS1 + 1)
+                                     (df.CAMPAIGN_DEKAD <= df.CAMPAIGN_EARLY_SEASON))
+  # p3 : if CAMPAIGN_EARLY_SEASON > (df.START_DVS1 + 1)
   #        (START_DVS1 - 1) to (START_DVS1 + 1)
   #      else
-  #        (START_DVS1 - 1) to EARLY_SEASON_END
-  p3_filter = SparkF.when(df.EARLY_SEASON_END > (df.START_DVS1 + 1),
+  #        (START_DVS1 - 1) to CAMPAIGN_EARLY_SEASON
+  p3_filter = SparkF.when(df.CAMPAIGN_EARLY_SEASON > (df.START_DVS1 + 1),
                           (df.CAMPAIGN_DEKAD >= (df.START_DVS1 - 1)) &
                           (df.CAMPAIGN_DEKAD <= (df.START_DVS1 + 1)))\
                           .otherwise((df.CAMPAIGN_DEKAD >= (df.START_DVS1 - 1)) &
-                                     (df.CAMPAIGN_DEKAD <= df.EARLY_SEASON_END))
-  # p4 : if EARLY_SEASON_END > df.START_DVS2
+                                     (df.CAMPAIGN_DEKAD <= df.CAMPAIGN_EARLY_SEASON))
+  # p4 : if CAMPAIGN_EARLY_SEASON > df.START_DVS2
   #        START_DVS1 to START_DVS2
   #      else
-  #        START_DVS1 to EARLY_SEASON_END
-  p4_filter = SparkF.when(df.EARLY_SEASON_END > df.START_DVS2,
+  #        START_DVS1 to CAMPAIGN_EARLY_SEASON
+  p4_filter = SparkF.when(df.CAMPAIGN_EARLY_SEASON > df.START_DVS2,
                           (df.CAMPAIGN_DEKAD >= df.START_DVS1) &
                           (df.CAMPAIGN_DEKAD <= df.START_DVS2))\
                           .otherwise((df.CAMPAIGN_DEKAD >= df.START_DVS1) &
-                                     (df.CAMPAIGN_DEKAD <= df.EARLY_SEASON_END))
-  # p5 : if EARLY_SEASON_END > (df.START_DVS2 + 1)
+                                     (df.CAMPAIGN_DEKAD <= df.CAMPAIGN_EARLY_SEASON))
+  # p5 : if CAMPAIGN_EARLY_SEASON > (df.START_DVS2 + 1)
   #        (START_DVS2 - 1) to (START_DVS2 + 1)
   #      else
-  #        (START_DVS2 - 1) to EARLY_SEASON_END
-  p5_filter = SparkF.when(df.EARLY_SEASON_END > (df.START_DVS2 + 1),
+  #        (START_DVS2 - 1) to CAMPAIGN_EARLY_SEASON
+  p5_filter = SparkF.when(df.CAMPAIGN_EARLY_SEASON > (df.START_DVS2 + 1),
                           (df.CAMPAIGN_DEKAD >= (df.START_DVS2 - 1)) &
                           (df.CAMPAIGN_DEKAD <= (df.START_DVS2 + 1)))\
                           .otherwise((df.CAMPAIGN_DEKAD >= (df.START_DVS2 - 1)) &
-                                     (df.CAMPAIGN_DEKAD <= df.EARLY_SEASON_END))
+                                     (df.CAMPAIGN_DEKAD <= df.CAMPAIGN_EARLY_SEASON))
 
   cc_periods = {
       'p0' : p0_filter,
@@ -82,7 +82,7 @@ def getCountryCropCalendar(crop_cal):
   aggrs = [ SparkF.bround(SparkF.avg(crop_cal['START_DVS'])).alias('START_DVS'),
             SparkF.bround(SparkF.avg(crop_cal['START_DVS1'])).alias('START_DVS1'),
             SparkF.bround(SparkF.avg(crop_cal['START_DVS2'])).alias('START_DVS2'),
-            SparkF.bround(SparkF.avg(crop_cal['EARLY_SEASON_END'])).alias('EARLY_SEASON_END') ]
+            SparkF.bround(SparkF.avg(crop_cal['CAMPAIGN_EARLY_SEASON'])).alias('CAMPAIGN_EARLY_SEASON') ]
 
   crop_cal = crop_cal.groupBy('COUNTRY').agg(*aggrs)
   return crop_cal
@@ -124,9 +124,9 @@ def getCropCalendar(cyp_config, dvs_summary, log_fh):
   p5_end = avg_dvs2_start + 1
 
   early_season_prediction = cyp_config.earlySeasonPrediction()
-
+  early_season_end = 36
   if (early_season_prediction):
-    early_season_end = np.round(pd_dvs_summary['EARLY_SEASON_END'].mean(), 0)
+    early_season_end = np.round(pd_dvs_summary['CAMPAIGN_EARLY_SEASON'].mean(), 0)
     p0_end = early_season_end if (p0_end > early_season_end) else p0_end
     p1_end = early_season_end if (p1_end > early_season_end) else p1_end
     p2_end = early_season_end if (p2_end > early_season_end) else p2_end
@@ -149,10 +149,9 @@ def getCropCalendar(cyp_config, dvs_summary, log_fh):
     crop_cal['p5'] = { 'desc' : 'harvest window', 'start' : p5_start, 'end' : p5_end }
 
   if (early_season_prediction):
-    es_end = cyp_config.getEarlySeasonEndDekad()
-    es_campaign_end = np.round(pd_dvs_summary['EARLY_SEASON_END'].mean(), 0)
-    early_season_info = '\nEarly Season Prediction Dekad: ' + str(es_end)
-    early_season_info += ', Campaign Dekad: ' + str(es_campaign_end)
+    early_season_rel_harvest = cyp_config.getEarlySeasonEndDekad()
+    early_season_info = '\nEarly Season Prediction Dekad: ' + str(early_season_rel_harvest)
+    early_season_info += ', Campaign Dekad: ' + str(early_season_end)
     log_fh.write(early_season_info + '\n')
     if (debug_level > 1):
       print(early_season_info)

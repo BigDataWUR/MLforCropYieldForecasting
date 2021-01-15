@@ -347,7 +347,7 @@ class CYPConfiguration:
         'use_centroids' : 'Use centroid coordinates and distance to coast',
         'use_remote_sensing' : 'Use remote sensing data (FAPAR)',
         'early_season_prediction' : 'Predict yield early in the season',
-        'early_season_end_dekad' : 'End dekad for early season prediction',
+        'early_season_end_dekad' : 'Early season end dekad relative to harvest',
         'data_path' : 'Path to all input data. Default is current directory.',
         'output_path' : 'Path to all output files. Default is current directory.',
         'save_features' : 'Save features to a CSV file',
@@ -1547,7 +1547,10 @@ class CYPDataSummarizer:
     self.verbose = cyp_config.getDebugLevel()
 
   def wofostDVSSummary(self, wofost_df, early_season_end=None):
-    """Summary of crop calendar based on DVS"""
+    """
+    Summary of crop calendar based on DVS.
+    Early season end is relative to end of the season, hence a negative number.
+    """
     join_cols = ['IDREGION', 'CAMPAIGN_YEAR']
     dvs_summary = wofost_df.select(join_cols).distinct()
 
@@ -1557,24 +1560,35 @@ class CYPDataSummarizer:
     wofost_df = wofost_df.withColumn('VALUE', wofost_df['DVS'])
     wofost_df = wofost_df.withColumn('PREV', SparkF.lag(wofost_df['VALUE']).over(my_window))
     wofost_df = wofost_df.withColumn('DIFF', SparkF.when(SparkF.isnull(wofost_df['PREV']), 0)\
-                                 .otherwise(wofost_df['VALUE'] - wofost_df['PREV']))
-    del_cols = ['VALUE', 'PREV', 'DIFF', 'EARLY_SEASON_END']
-    if (early_season_end is None):
-      wofost_df = wofost_df.withColumn('EARLY_SEASON_END', SparkF.lit(36))
-    else:
-      wofost_df = wofost_df.withColumn('EARLY_SEASON_END',
-                                       wofost_df['CAMPAIGN_DEKAD'] - wofost_df['DEKAD'] + early_season_end)
+                                     .otherwise(wofost_df['VALUE'] - wofost_df['PREV']))
+    wofost_df = wofost_df.withColumn('SEASON_ALIGN', wofost_df['CAMPAIGN_DEKAD'] - wofost_df['DEKAD'])
 
+    del_cols = ['VALUE', 'PREV', 'DIFF']
     dvs_summary = dvs_summary.join(wofost_df.filter(wofost_df['VALUE'] > 0.0).groupBy(join_cols)\
                                    .agg(SparkF.min('CAMPAIGN_DEKAD').alias('START_DVS')), join_cols)
-    dvs_summary = dvs_summary.join(wofost_df.filter(wofost_df.DVS >= 100).groupBy(join_cols)\
+    dvs_summary = dvs_summary.join(wofost_df.filter(wofost_df['DVS'] >= 100).groupBy(join_cols)\
                                    .agg(SparkF.min('CAMPAIGN_DEKAD').alias('START_DVS1')), join_cols)
-    dvs_summary = dvs_summary.join(wofost_df.filter(wofost_df.DVS >= 200).groupBy(join_cols)\
+    dvs_summary = dvs_summary.join(wofost_df.filter(wofost_df['DVS'] >= 200).groupBy(join_cols)\
                                    .agg(SparkF.min('CAMPAIGN_DEKAD').alias('START_DVS2')), join_cols)
-    dvs_summary = dvs_summary.join(wofost_df.groupBy(join_cols)\
-                                   .agg(SparkF.max('EARLY_SEASON_END').alias('EARLY_SEASON_END')), join_cols)
+    dvs_summary = dvs_summary.join(wofost_df.filter(wofost_df['DVS'] >= 200).groupBy(join_cols)\
+                                   .agg(SparkF.min('DEKAD').alias('HARVEST')), join_cols)
+    dvs_summary = dvs_summary.join(wofost_df.filter(wofost_df['DVS'] >= 200).groupBy(join_cols)\
+                                   .agg(SparkF.max('SEASON_ALIGN').alias('SEASON_ALIGN')), join_cols)
+
+    # Calendar year end season and early season dekads for comparing with MCYFS
+    # Campaign year early season dekad to filter data during feature design
+    dvs_summary = dvs_summary.withColumn('CALENDAR_END_SEASON', dvs_summary['HARVEST'] + 1)
+    dvs_summary = dvs_summary.withColumn('CAMPAIGN_EARLY_SEASON',
+                                         dvs_summary['CALENDAR_END_SEASON'] + dvs_summary['SEASON_ALIGN'])
+    if (early_season_end is not None):
+      dvs_summary = dvs_summary.withColumn('CALENDAR_EARLY_SEASON',
+                                         dvs_summary['CALENDAR_END_SEASON'] + early_season_end)
+      dvs_summary = dvs_summary.withColumn('CAMPAIGN_EARLY_SEASON',
+                                           dvs_summary['CAMPAIGN_EARLY_SEASON'] + early_season_end)
 
     wofost_df = wofost_df.drop(*del_cols)
+    dvs_summary = dvs_summary.drop('HARVEST', 'SEASON_ALIGN')
+
     return dvs_summary
 
   def indicatorsSummary(self, df, min_cols, max_cols, avg_cols):
@@ -1669,6 +1683,7 @@ def summarizeData(cyp_config, cyp_summarizer, train_test_dfs):
   # 1. The summary is per region per year.
   # 2. The summary is based on wofost simulations not real sowing and harvest dates
   dvs_summary = cyp_summarizer.wofostDVSSummary(wofost_train_df, early_season_end)
+  dvs_summary = dvs_summary.drop('CALENDAR_END_SEASON', 'CALENDAR_EARLY_SEASON')
   if (debug_level > 1):
     printDataSummary(dvs_summary, 'WOFOST_DVS')
 
@@ -1719,60 +1734,60 @@ def getCropCalendarPeriods(df):
   """Periods for per year crop calendar"""
   # (maximum of 4 months = 12 dekads).
   # Subtracting 11 because both ends of the period are included.
-  # p0 : if EARLY_SEASON_END > df.START_DVS
+  # p0 : if CAMPAIGN_EARLY_SEASON > df.START_DVS
   #        START_DVS - 11 to START_DVS
   #      else
-  #        START_DVS - 11 to EARLY_SEASON_END
-  p0_filter = SparkF.when(df.EARLY_SEASON_END > df.START_DVS,
+  #        START_DVS - 11 to CAMPAIGN_EARLY_SEASON
+  p0_filter = SparkF.when(df.CAMPAIGN_EARLY_SEASON > df.START_DVS,
                           (df.CAMPAIGN_DEKAD >= (df.START_DVS - 11)) &
                           (df.CAMPAIGN_DEKAD <= df.START_DVS))\
                           .otherwise((df.CAMPAIGN_DEKAD >= (df.START_DVS - 11)) &
-                                     (df.CAMPAIGN_DEKAD <= df.EARLY_SEASON_END))
-  # p1 : if EARLY_SEASON_END > (df.START_DVS + 1)
+                                     (df.CAMPAIGN_DEKAD <= df.CAMPAIGN_EARLY_SEASON))
+  # p1 : if CAMPAIGN_EARLY_SEASON > (df.START_DVS + 1)
   #        (START_DVS - 1) to (START_DVS + 1)
   #      else
-  #        (START_DVS - 1) to EARLY_SEASON_END
-  p1_filter = SparkF.when(df.EARLY_SEASON_END > (df.START_DVS + 1),
+  #        (START_DVS - 1) to CAMPAIGN_EARLY_SEASON
+  p1_filter = SparkF.when(df.CAMPAIGN_EARLY_SEASON > (df.START_DVS + 1),
                           (df.CAMPAIGN_DEKAD >= (df.START_DVS - 1)) &
                           (df.CAMPAIGN_DEKAD <= (df.START_DVS + 1)))\
                           .otherwise((df.CAMPAIGN_DEKAD >= (df.START_DVS - 1)) &
-                                     (df.CAMPAIGN_DEKAD <= df.EARLY_SEASON_END))
-  # p2 : if EARLY_SEASON_END > df.START_DVS1
+                                     (df.CAMPAIGN_DEKAD <= df.CAMPAIGN_EARLY_SEASON))
+  # p2 : if CAMPAIGN_EARLY_SEASON > df.START_DVS1
   #        START_DVS to START_DVS1
   #      else
-  #        START_DVS to EARLY_SEASON_END
-  p2_filter = SparkF.when(df.EARLY_SEASON_END > df.START_DVS1,
+  #        START_DVS to CAMPAIGN_EARLY_SEASON
+  p2_filter = SparkF.when(df.CAMPAIGN_EARLY_SEASON > df.START_DVS1,
                           (df.CAMPAIGN_DEKAD >= df.START_DVS) &
                           (df.CAMPAIGN_DEKAD <= df.START_DVS1))\
                           .otherwise((df.CAMPAIGN_DEKAD >= df.START_DVS) &
-                                     (df.CAMPAIGN_DEKAD <= df.EARLY_SEASON_END))
-  # p3 : if EARLY_SEASON_END > (df.START_DVS1 + 1)
+                                     (df.CAMPAIGN_DEKAD <= df.CAMPAIGN_EARLY_SEASON))
+  # p3 : if CAMPAIGN_EARLY_SEASON > (df.START_DVS1 + 1)
   #        (START_DVS1 - 1) to (START_DVS1 + 1)
   #      else
-  #        (START_DVS1 - 1) to EARLY_SEASON_END
-  p3_filter = SparkF.when(df.EARLY_SEASON_END > (df.START_DVS1 + 1),
+  #        (START_DVS1 - 1) to CAMPAIGN_EARLY_SEASON
+  p3_filter = SparkF.when(df.CAMPAIGN_EARLY_SEASON > (df.START_DVS1 + 1),
                           (df.CAMPAIGN_DEKAD >= (df.START_DVS1 - 1)) &
                           (df.CAMPAIGN_DEKAD <= (df.START_DVS1 + 1)))\
                           .otherwise((df.CAMPAIGN_DEKAD >= (df.START_DVS1 - 1)) &
-                                     (df.CAMPAIGN_DEKAD <= df.EARLY_SEASON_END))
-  # p4 : if EARLY_SEASON_END > df.START_DVS2
+                                     (df.CAMPAIGN_DEKAD <= df.CAMPAIGN_EARLY_SEASON))
+  # p4 : if CAMPAIGN_EARLY_SEASON > df.START_DVS2
   #        START_DVS1 to START_DVS2
   #      else
-  #        START_DVS1 to EARLY_SEASON_END
-  p4_filter = SparkF.when(df.EARLY_SEASON_END > df.START_DVS2,
+  #        START_DVS1 to CAMPAIGN_EARLY_SEASON
+  p4_filter = SparkF.when(df.CAMPAIGN_EARLY_SEASON > df.START_DVS2,
                           (df.CAMPAIGN_DEKAD >= df.START_DVS1) &
                           (df.CAMPAIGN_DEKAD <= df.START_DVS2))\
                           .otherwise((df.CAMPAIGN_DEKAD >= df.START_DVS1) &
-                                     (df.CAMPAIGN_DEKAD <= df.EARLY_SEASON_END))
-  # p5 : if EARLY_SEASON_END > (df.START_DVS2 + 1)
+                                     (df.CAMPAIGN_DEKAD <= df.CAMPAIGN_EARLY_SEASON))
+  # p5 : if CAMPAIGN_EARLY_SEASON > (df.START_DVS2 + 1)
   #        (START_DVS2 - 1) to (START_DVS2 + 1)
   #      else
-  #        (START_DVS2 - 1) to EARLY_SEASON_END
-  p5_filter = SparkF.when(df.EARLY_SEASON_END > (df.START_DVS2 + 1),
+  #        (START_DVS2 - 1) to CAMPAIGN_EARLY_SEASON
+  p5_filter = SparkF.when(df.CAMPAIGN_EARLY_SEASON > (df.START_DVS2 + 1),
                           (df.CAMPAIGN_DEKAD >= (df.START_DVS2 - 1)) &
                           (df.CAMPAIGN_DEKAD <= (df.START_DVS2 + 1)))\
                           .otherwise((df.CAMPAIGN_DEKAD >= (df.START_DVS2 - 1)) &
-                                     (df.CAMPAIGN_DEKAD <= df.EARLY_SEASON_END))
+                                     (df.CAMPAIGN_DEKAD <= df.CAMPAIGN_EARLY_SEASON))
 
   cc_periods = {
       'p0' : p0_filter,
@@ -1791,7 +1806,7 @@ def getCountryCropCalendar(crop_cal):
   aggrs = [ SparkF.bround(SparkF.avg(crop_cal['START_DVS'])).alias('START_DVS'),
             SparkF.bround(SparkF.avg(crop_cal['START_DVS1'])).alias('START_DVS1'),
             SparkF.bround(SparkF.avg(crop_cal['START_DVS2'])).alias('START_DVS2'),
-            SparkF.bround(SparkF.avg(crop_cal['EARLY_SEASON_END'])).alias('EARLY_SEASON_END') ]
+            SparkF.bround(SparkF.avg(crop_cal['CAMPAIGN_EARLY_SEASON'])).alias('CAMPAIGN_EARLY_SEASON') ]
 
   crop_cal = crop_cal.groupBy('COUNTRY').agg(*aggrs)
   return crop_cal
@@ -1833,9 +1848,9 @@ def getCropCalendar(cyp_config, dvs_summary, log_fh):
   p5_end = avg_dvs2_start + 1
 
   early_season_prediction = cyp_config.earlySeasonPrediction()
-
+  early_season_end = 36
   if (early_season_prediction):
-    early_season_end = np.round(pd_dvs_summary['EARLY_SEASON_END'].mean(), 0)
+    early_season_end = np.round(pd_dvs_summary['CAMPAIGN_EARLY_SEASON'].mean(), 0)
     p0_end = early_season_end if (p0_end > early_season_end) else p0_end
     p1_end = early_season_end if (p1_end > early_season_end) else p1_end
     p2_end = early_season_end if (p2_end > early_season_end) else p2_end
@@ -1858,10 +1873,9 @@ def getCropCalendar(cyp_config, dvs_summary, log_fh):
     crop_cal['p5'] = { 'desc' : 'harvest window', 'start' : p5_start, 'end' : p5_end }
 
   if (early_season_prediction):
-    es_end = cyp_config.getEarlySeasonEndDekad()
-    es_campaign_end = np.round(pd_dvs_summary['EARLY_SEASON_END'].mean(), 0)
-    early_season_info = '\nEarly Season Prediction Dekad: ' + str(es_end)
-    early_season_info += ', Campaign Dekad: ' + str(es_campaign_end)
+    early_season_rel_harvest = cyp_config.getEarlySeasonEndDekad()
+    early_season_info = '\nEarly Season Prediction Dekad: ' + str(early_season_rel_harvest)
+    early_season_info += ', Campaign Dekad: ' + str(early_season_end)
     log_fh.write(early_season_info + '\n')
     if (debug_level > 1):
       print(early_season_info)
@@ -3490,9 +3504,12 @@ def getDataForMCYFSComparison(spark, cyp_config):
   data_path = cyp_config.getDataPath()
   crop_id = cyp_config.getCropID()
   nuts_level = cyp_config.getNUTSLevel()
+  season_crosses_calyear = cyp_config.seasonCrossesCalendarYear()
+  early_season_end = cyp_config.getEarlySeasonEndDekad()
   debug_level = cyp_config.getDebugLevel()
   area_nuts = ['NUTS' + str(i) for i in range(int(nuts_level[-1]), 0, -1)]
   data_sources = {
+      'WOFOST' : nuts_level,
       'AREA_FRACTIONS' : area_nuts,
       'YIELD' : 'NUTS0',
       'YIELD_PRED_MCYFS' : 'NUTS0',
@@ -3514,6 +3531,7 @@ def getDataForMCYFSComparison(spark, cyp_config):
   cyp_loader = CYPDataLoader(spark, cyp_config)
   data_dfs = cyp_loader.loadAllData()
 
+  wofost_df = data_dfs['WOFOST']
   area_dfs = data_dfs['AREA_FRACTIONS']
   nuts0_yield_df = data_dfs['YIELD']
   mcyfs_yield_df = data_dfs['YIELD_PRED_MCYFS']
@@ -3527,6 +3545,10 @@ def getDataForMCYFSComparison(spark, cyp_config):
     test_preprocessor.runAllTests()
 
   cyp_preprocessor = CYPDataPreprocessor(spark, cyp_config)
+  wofost_df = wofost_df.filter(wofost_df['CROP_ID'] == crop_id).drop('CROP_ID')
+  crop_season = cyp_preprocessor.getCropSeasonInformation(wofost_df, season_crosses_calyear)
+  wofost_df = cyp_preprocessor.preprocessWofost(wofost_df, crop_season, season_crosses_calyear)
+
   for i in range(len(area_dfs)):
     af_df = area_dfs[i]
     af_df = cyp_preprocessor.preprocessAreaFractions(af_df, crop_id)
@@ -3554,7 +3576,16 @@ def getDataForMCYFSComparison(spark, cyp_config):
   assert (nuts0_yield_df is not None)
   assert (mcyfs_yield_df is not None)
 
+  if (run_tests):
+    test_summarizer = TestDataSummarizer(spark)
+    test_summarizer.runAllTests()
+
+  cyp_summarizer = CYPDataSummarizer(cyp_config)
+  dvs_summary = cyp_summarizer.wofostDVSSummary(wofost_df, early_season_end)
+  dvs_summary = dvs_summary.filter(dvs_summary['CAMPAIGN_YEAR'].isin(test_years))
+
   data_dfs = {
+      'WOFOST_DVS' : dvs_summary,
       'AREA_FRACTIONS' : area_dfs,
       'YIELD_NUTS0' : nuts0_yield_df,
       'YIELD_PRED_MCYFS' : mcyfs_yield_df
@@ -3686,21 +3717,25 @@ def comparePredictionsWithMCYFS(sqlCtx, cyp_config, pd_ml_predictions, log_fh):
   debug_level = cyp_config.getDebugLevel()
   alg_names = list(cyp_config.getEstimators().keys())
 
-  spark = sqlContext.sparkSession
+  spark = sqlCtx.sparkSession
   data_dfs = getDataForMCYFSComparison(spark, cyp_config)
+  pd_dvs_summary = data_dfs['WOFOST_DVS'].toPandas()
   pd_nuts0_yield_df = data_dfs['YIELD_NUTS0'].toPandas()
   pd_mcyfs_pred_df = data_dfs['YIELD_PRED_MCYFS'].toPandas()
   area_dfs = data_dfs['AREA_FRACTIONS']
   join_cols = ['IDREGION', 'FYEAR']
   test_years = pd_ml_predictions['FYEAR'].unique()
+  metrics = cyp_config.getEvaluationMetrics()
   nuts0_pred_df = aggregatePredictionsToNUTS0(cyp_config, pd_ml_predictions,
                                               area_dfs, test_years, join_cols)
 
-  metrics = cyp_config.getEvaluationMetrics()
-  pred_dekad = 36
-  early_season_prediction = cyp_config.earlySeasonPrediction()
-  if (early_season_prediction):
-    pred_dekad = cyp_config.getEarlySeasonEndDekad()
+  crop_season_cols = ['IDREGION', 'CAMPAIGN_YEAR', 'CALENDAR_END_SEASON', 'CALENDAR_EARLY_SEASON']
+  pd_dvs_summary = pd_dvs_summary[crop_season_cols].rename(columns={ 'CAMPAIGN_YEAR' : 'FYEAR' })
+  pd_dvs_summary = pd_dvs_summary.groupby('FYEAR').agg(END_SEASON=('CALENDAR_END_SEASON', 'mean'),
+                                                       EARLY_SEASON=('CALENDAR_EARLY_SEASON', 'mean'))\
+                                                       .round(0).reset_index()
+  if (debug_level > 1):
+    print(pd_dvs_summary.head(5).to_string(index=False))
 
   alg_summary = {}
   Y_pred_mcyfs = []
@@ -3715,6 +3750,10 @@ def comparePredictionsWithMCYFS(sqlCtx, cyp_config, pd_ml_predictions, log_fh):
     print('\nPredictions and true values for', country_code)
 
   for yr in ml_pred_years:
+    pred_dekad = pd_dvs_summary[pd_dvs_summary['FYEAR'] == yr]['END_SEASON'].values[0]
+    if (early_season_prediction):
+      pred_dekad = pd_dvs_summary[pd_dvs_summary['FYEAR'] == yr]['EARLY_SEASON'].values[0]
+
     mcyfs_pred = getMCYFSPrediction(pd_mcyfs_pred_df, yr, pred_dekad, print_debug)
     nuts0_yield = getNUTS0Yield(pd_nuts0_yield_df, yr, print_debug)
     if ((mcyfs_pred > 0.0) and (nuts0_yield > 0.0)):
@@ -4102,7 +4141,6 @@ class TestDataPreprocessor():
     self.wofost_df = self.preprocessor.preprocessWofost(self.wofost_df,
                                                         self.crop_season,
                                                         False)
-
     self.wofost_df.show(5)
     self.crop_season.show(5)
 
@@ -4475,12 +4513,12 @@ if (test_env == 'notebook'):
       'trend_windows' : [5, 7, 10],
       'use_centroids' : 'N',
       'use_remote_sensing' : 'Y',
-      'early_season_prediction' : 'N',
-      'early_season_end_dekad' : 0,
+      'early_season_prediction' : 'Y',
+      'early_season_end_dekad' : -6,
       'save_features' : 'N',
       'use_saved_features' : 'N',
       'save_predictions' : 'N',
-      'use_saved_predictions' : 'Y',
+      'use_saved_predictions' : 'N',
       'compare_with_mcyfs' : 'Y',
       'debug_level' : 2,
   }
@@ -4584,7 +4622,7 @@ if ((test_env == 'notebook') and
   pd_feature_dfs = createFeatures(cyp_config, cyp_featurizer,
                                   prep_train_test_dfs, summary_dfs, log_fh)
 
-  # trend features
+  # yield trend features
   if (use_yield_trend):
     yield_train_df = prep_train_test_dfs['YIELD'][0]
     yield_test_df = prep_train_test_dfs['YIELD'][1]
@@ -4781,10 +4819,10 @@ def main():
       'use_yield_trend' : args.yield_trend,
       'find_optimal_trend_window' : args.optimal_trend_window,
       'predict_yield_residuals' : args.predict_residuals,
-      'early_season_prediction' : args.early_season,
-      'early_season_end_dekad' : args.early_season_end,
       'use_centroids' : args.centroids,
       'use_remote_sensing' : args.remote_sensing,
+      'early_season_prediction' : args.early_season,
+      'early_season_end_dekad' : args.early_season_end,
       'save_features' : args.save_features,
       'use_saved_features' : args.use_saved_features,
       'save_predictions' : args.save_predictions,
@@ -4860,15 +4898,20 @@ def main():
       print('# Feature Design  #')
       print('###################')
 
+      # WOFOST, Meteo and Remote Sensing Features
       cyp_featurizer = CYPFeaturizer(cyp_config)
       pd_feature_dfs = createFeatures(cyp_config, cyp_featurizer,
                                       prep_train_test_dfs, summary_dfs, log_fh)
 
       # yield trend features
-      yield_train_df = prep_train_test_dfs['YIELD'][0]
-      yield_test_df = prep_train_test_dfs['YIELD'][1]
-
       if (use_yield_trend):
+        yield_train_df = prep_train_test_dfs['YIELD'][0]
+        yield_test_df = prep_train_test_dfs['YIELD'][1]
+
+        if (run_tests):
+          test_yield_trend = TestYieldTrendEstimator(yield_train_df)
+          test_yield_trend.runAllTests()
+
         cyp_trend_est = CYPYieldTrendEstimator(cyp_config)
         pd_yield_train_ft, pd_yield_test_ft = createYieldTrendFeatures(cyp_config, cyp_trend_est,
                                                                        yield_train_df, yield_test_df,

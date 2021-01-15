@@ -47,9 +47,12 @@ def getDataForMCYFSComparison(spark, cyp_config):
   data_path = cyp_config.getDataPath()
   crop_id = cyp_config.getCropID()
   nuts_level = cyp_config.getNUTSLevel()
+  season_crosses_calyear = cyp_config.seasonCrossesCalendarYear()
+  early_season_end = cyp_config.getEarlySeasonEndDekad()
   debug_level = cyp_config.getDebugLevel()
   area_nuts = ['NUTS' + str(i) for i in range(int(nuts_level[-1]), 0, -1)]
   data_sources = {
+      'WOFOST' : nuts_level,
       'AREA_FRACTIONS' : area_nuts,
       'YIELD' : 'NUTS0',
       'YIELD_PRED_MCYFS' : 'NUTS0',
@@ -71,6 +74,7 @@ def getDataForMCYFSComparison(spark, cyp_config):
   cyp_loader = CYPDataLoader(spark, cyp_config)
   data_dfs = cyp_loader.loadAllData()
 
+  wofost_df = data_dfs['WOFOST']
   area_dfs = data_dfs['AREA_FRACTIONS']
   nuts0_yield_df = data_dfs['YIELD']
   mcyfs_yield_df = data_dfs['YIELD_PRED_MCYFS']
@@ -84,6 +88,10 @@ def getDataForMCYFSComparison(spark, cyp_config):
     test_preprocessor.runAllTests()
 
   cyp_preprocessor = CYPDataPreprocessor(spark, cyp_config)
+  wofost_df = wofost_df.filter(wofost_df['CROP_ID'] == crop_id).drop('CROP_ID')
+  crop_season = cyp_preprocessor.getCropSeasonInformation(wofost_df, season_crosses_calyear)
+  wofost_df = cyp_preprocessor.preprocessWofost(wofost_df, crop_season, season_crosses_calyear)
+
   for i in range(len(area_dfs)):
     af_df = area_dfs[i]
     af_df = cyp_preprocessor.preprocessAreaFractions(af_df, crop_id)
@@ -111,7 +119,16 @@ def getDataForMCYFSComparison(spark, cyp_config):
   assert (nuts0_yield_df is not None)
   assert (mcyfs_yield_df is not None)
 
+  if (run_tests):
+    test_summarizer = TestDataSummarizer(spark)
+    test_summarizer.runAllTests()
+
+  cyp_summarizer = CYPDataSummarizer(cyp_config)
+  dvs_summary = cyp_summarizer.wofostDVSSummary(wofost_df, early_season_end)
+  dvs_summary = dvs_summary.filter(dvs_summary['CAMPAIGN_YEAR'].isin(test_years))
+
   data_dfs = {
+      'WOFOST_DVS' : dvs_summary,
       'AREA_FRACTIONS' : area_dfs,
       'YIELD_NUTS0' : nuts0_yield_df,
       'YIELD_PRED_MCYFS' : mcyfs_yield_df
@@ -245,19 +262,23 @@ def comparePredictionsWithMCYFS(sqlCtx, cyp_config, pd_ml_predictions, log_fh):
 
   spark = sqlCtx.sparkSession
   data_dfs = getDataForMCYFSComparison(spark, cyp_config)
+  pd_dvs_summary = data_dfs['WOFOST_DVS'].toPandas()
   pd_nuts0_yield_df = data_dfs['YIELD_NUTS0'].toPandas()
   pd_mcyfs_pred_df = data_dfs['YIELD_PRED_MCYFS'].toPandas()
   area_dfs = data_dfs['AREA_FRACTIONS']
   join_cols = ['IDREGION', 'FYEAR']
   test_years = pd_ml_predictions['FYEAR'].unique()
+  metrics = cyp_config.getEvaluationMetrics()
   nuts0_pred_df = aggregatePredictionsToNUTS0(cyp_config, pd_ml_predictions,
                                               area_dfs, test_years, join_cols)
 
-  metrics = cyp_config.getEvaluationMetrics()
-  pred_dekad = 36
-  early_season_prediction = cyp_config.earlySeasonPrediction()
-  if (early_season_prediction):
-    pred_dekad = cyp_config.getEarlySeasonEndDekad()
+  crop_season_cols = ['IDREGION', 'CAMPAIGN_YEAR', 'CALENDAR_END_SEASON', 'CALENDAR_EARLY_SEASON']
+  pd_dvs_summary = pd_dvs_summary[crop_season_cols].rename(columns={ 'CAMPAIGN_YEAR' : 'FYEAR' })
+  pd_dvs_summary = pd_dvs_summary.groupby('FYEAR').agg(END_SEASON=('CALENDAR_END_SEASON', 'mean'),
+                                                       EARLY_SEASON=('CALENDAR_EARLY_SEASON', 'mean'))\
+                                                       .round(0).reset_index()
+  if (debug_level > 1):
+    print(pd_dvs_summary.head(5).to_string(index=False))
 
   alg_summary = {}
   Y_pred_mcyfs = []
@@ -272,6 +293,10 @@ def comparePredictionsWithMCYFS(sqlCtx, cyp_config, pd_ml_predictions, log_fh):
     print('\nPredictions and true values for', country_code)
 
   for yr in ml_pred_years:
+    pred_dekad = pd_dvs_summary[pd_dvs_summary['FYEAR'] == yr]['END_SEASON'].values[0]
+    if (early_season_prediction):
+      pred_dekad = pd_dvs_summary[pd_dvs_summary['FYEAR'] == yr]['EARLY_SEASON'].values[0]
+
     mcyfs_pred = getMCYFSPrediction(pd_mcyfs_pred_df, yr, pred_dekad, print_debug)
     nuts0_yield = getNUTS0Yield(pd_nuts0_yield_df, yr, print_debug)
     if ((mcyfs_pred > 0.0) and (nuts0_yield > 0.0)):

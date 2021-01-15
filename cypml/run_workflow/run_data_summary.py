@@ -64,6 +64,7 @@ def summarizeData(cyp_config, cyp_summarizer, train_test_dfs):
   # 1. The summary is per region per year.
   # 2. The summary is based on wofost simulations not real sowing and harvest dates
   dvs_summary = cyp_summarizer.wofostDVSSummary(wofost_train_df, early_season_end)
+  dvs_summary = dvs_summary.drop('CALENDAR_END_SEASON', 'CALENDAR_EARLY_SEASON')
   if (debug_level > 1):
     printDataSummary(dvs_summary, 'WOFOST_DVS')
 

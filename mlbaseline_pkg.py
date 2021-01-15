@@ -259,15 +259,20 @@ def main():
       print('# Feature Design  #')
       print('###################')
 
+      # WOFOST, Meteo and Remote Sensing features
       cyp_featurizer = CYPFeaturizer(cyp_config)
       pd_feature_dfs = createFeatures(cyp_config, cyp_featurizer,
                                       prep_train_test_dfs, summary_dfs, log_fh)
 
       # yield trend features
-      yield_train_df = prep_train_test_dfs['YIELD'][0]
-      yield_test_df = prep_train_test_dfs['YIELD'][1]
-
       if (use_yield_trend):
+        yield_train_df = prep_train_test_dfs['YIELD'][0]
+        yield_test_df = prep_train_test_dfs['YIELD'][1]
+
+        if (run_tests):
+          test_yield_trend = TestYieldTrendEstimator(yield_train_df)
+          test_yield_trend.runAllTests()
+
         cyp_trend_est = CYPYieldTrendEstimator(cyp_config)
         pd_yield_train_ft, pd_yield_test_ft = createYieldTrendFeatures(cyp_config, cyp_trend_est,
                                                                        yield_train_df, yield_test_df,
