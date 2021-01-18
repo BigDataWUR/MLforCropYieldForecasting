@@ -45,7 +45,7 @@ To run the script in Google Dataproc environment, download the python sript and
 4. Upload data to storage bucket: create data/ and scripts/ directories inside
    the bucket. Inside data create directories for countries, e.g. NUTS2-NL,
    NUTS3-FR. Upload data for the Netherlands to data/NUTS2-NL/ and data for
-   France to data/NUTS3-FR. Upload *crop_yield_prediction.py* script to scripts/.
+   France to data/NUTS3-FR. Upload *mlbaseline.py* script to scripts/.
 5. Copy *pip-install.sh*. Use the following commad in Google Cloud Shell.
 
 `$ gsutil cp gs://dataproc-initialization-actions/python/pip-install.sh gs://ml-spark-1/scripts`
@@ -56,13 +56,13 @@ To run the script in Google Dataproc environment, download the python sript and
 
 `$ gcloud dataproc jobs submit pyspark --cluster=ml-spark-cluster1 --region=europe-west1 \`
 
-`  gs://ml-spark-1/scripts/crop_yield_prediction.py -- \`
+`  gs://ml-spark-1/scripts/mlbaseline.py -- \`
 
 `  --country NL --nuts-level NUTS2 --crop potatoes`
 
 `  --data-path gs://ml-spark-1/data/NUTS2-NL --output-path gs://ml-spark-1/output`
 
-Options supported by `crop_yield_prediction.py`:
+Options supported by `mlbaseline.py`:
 
 ` args_dict = {
 
