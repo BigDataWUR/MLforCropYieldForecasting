@@ -42,8 +42,8 @@ def main():
     run_tests = globals.run_tests
 
   conf = SparkConf().setMaster('local[*]')
-  conf.set('spark.executor.memory', '12g')
-  conf.set('spark.driver.memory', '6g')
+  # conf.set('spark.executor.memory', '12g')
+  # conf.set('spark.driver.memory', '6g')
   conf.set('spark.sql.execution.arrow.pyspark.enabled', True)
 
   sc = SparkContext(conf=conf)

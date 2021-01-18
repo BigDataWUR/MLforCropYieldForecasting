@@ -81,8 +81,8 @@ from pyspark.sql import SparkSession
 from pyspark.sql import SQLContext
 
 conf = SparkConf().setMaster('local[*]')
-conf.set('spark.executor.memory', '12g')
-conf.set('spark.driver.memory', '6g')
+# conf.set('spark.executor.memory', '12g')
+# conf.set('spark.driver.memory', '6g')
 conf.set('spark.sql.execution.arrow.pyspark.enabled', True)
 
 sc = SparkContext(conf=conf)
@@ -307,11 +307,7 @@ class CYPConfiguration:
         'season_crosses_calendar_year' : season_cross,
         'country_code' : country_code,
         'nuts_level' : 'NUTS2',
-        'data_sources' : { 'WOFOST' : 'NUTS2',
-                           'METEO_DAILY' : 'NUTS2',
-                           'SOIL' : 'NUTS2',
-                           'YIELD' : 'NUTS2',
-                         },
+        'data_sources' : [ 'WOFOST', 'METEO_DAILY', 'SOIL', 'YIELD' ],
         'use_yield_trend' : 'N',
         'predict_yield_residuals' : 'N',
         'find_optimal_trend_window' : 'N',
