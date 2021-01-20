@@ -80,10 +80,13 @@ from pyspark import SparkConf
 from pyspark.sql import SparkSession
 from pyspark.sql import SQLContext
 
+SparkContext.setSystemProperty('spark.executor.memory', '12g')
+SparkContext.setSystemProperty('spark.driver.memory', '6g')
+spark = SparkSession.builder.master("local[*]").getOrCreate()
+spark.conf.set("spark.sql.execution.arrow.pyspark.enabled", "true")
+
 sc = SparkContext.getOrCreate()
 sqlContext = SQLContext(sc)
-spark = sqlContext.sparkSession
-spark.conf.set("spark.sql.execution.arrow.pyspark.enabled", "true")
 
 """## Utility Functions"""
 
@@ -312,7 +315,7 @@ class CYPConfiguration:
         'use_centroids' : 'N',
         'use_remote_sensing' : 'Y',
         'early_season_prediction' : 'N',
-        'early_season_end_dekad' : 15,
+        'early_season_end_dekad' : 0,
         'data_path' : '.',
         'output_path' : '.',
         'save_features' : 'N',

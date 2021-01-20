@@ -41,14 +41,14 @@ def main():
     test_env = globals.test_env
     run_tests = globals.run_tests
 
-  sc = SparkContext.getOrCreate()
-  sqlContext = SQLContext(sc)
-  spark = sqlContext.sparkSession
+
+  SparkContext.setSystemProperty('spark.executor.memory', '12g')
+  SparkContext.setSystemProperty('spark.driver.memory', '6g')
+  spark = SparkSession.builder.master("local[*]").getOrCreate()
   spark.conf.set("spark.sql.execution.arrow.pyspark.enabled", "true")
 
-  sc = SparkContext(conf=conf)
+  sc = SparkContext.getOrCreate()
   sqlContext = SQLContext(sc)
-  spark = sqlContext.sparkSession
 
   print('##################')
   print('# Configuration  #')
