@@ -27,8 +27,8 @@ Initialize Spark session and global variables. Package installation is required 
 """
 
 #%%writefile globals.py
-test_env = 'notebook'
-# test_env = 'cluster'
+# test_env = 'notebook'
+test_env = 'cluster'
 # test_env = 'pkg'
 
 # change to False to skip tests
@@ -70,21 +70,7 @@ crop_name_dict = {
     95 : 'spring barley',
 }
 
-if (test_env == 'notebook'):
-  !apt-get install openjdk-8-jdk-headless -qq > /dev/null
-  !wget -c -q https://archive.apache.org/dist/spark/spark-3.0.0/spark-3.0.0-bin-hadoop2.7.tgz
-  !tar xf spark-3.0.0-bin-hadoop2.7.tgz
-  !pip install -q findspark
-  !pip install joblibspark
-
-  import os
-  os.environ["JAVA_HOME"] = "/usr/lib/jvm/java-8-openjdk-amd64"
-  os.environ["SPARK_HOME"] = "/content/spark-3.0.0-bin-hadoop2.7"
-
-  import findspark
-  findspark.init()
-else:
-  import pyspark
+import pyspark
 
 from pyspark.sql import functions as SparkF
 from pyspark.sql import types as SparkT
@@ -94,14 +80,10 @@ from pyspark import SparkConf
 from pyspark.sql import SparkSession
 from pyspark.sql import SQLContext
 
-conf = SparkConf().setMaster('local[*]')
-# conf.set('spark.executor.memory', '12g')
-# conf.set('spark.driver.memory', '6g')
-conf.set('spark.sql.execution.arrow.pyspark.enabled', True)
-
-sc = SparkContext(conf=conf)
+sc = SparkContext.getOrCreate()
 sqlContext = SQLContext(sc)
 spark = sqlContext.sparkSession
+spark.conf.set("spark.sql.execution.arrow.pyspark.enabled", "true")
 
 """## Utility Functions"""
 
