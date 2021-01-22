@@ -1999,20 +1999,12 @@ class CYPYieldTrendEstimator:
       yield_fts = yield_fts.filter(yield_fts.IDREGION == reg_id)
 
     for i in range(trend_window):
-      if (i == 0):
-        yield_fts = yield_fts.withColumn('PREV_YIELD', SparkF.lag(yield_fts.YIELD).over(my_window))
-        yield_fts = yield_fts.withColumn('PREV_YEAR', SparkF.lag(yield_fts.FYEAR).over(my_window))
-      else:
-        yield_fts = yield_fts.withColumn('PREV_YIELD2', SparkF.lag(yield_fts.PREV_YIELD).over(my_window))
-        yield_fts = yield_fts.withColumn('PREV_YEAR2', SparkF.lag(yield_fts.PREV_YEAR).over(my_window))
-        yield_fts = yield_fts.withColumnRenamed('PREV_YIELD', 'YIELD-' + str(i))
-        yield_fts = yield_fts.withColumnRenamed('PREV_YEAR', 'YEAR-' + str(i))
-        yield_fts = yield_fts.withColumnRenamed('PREV_YIELD2', 'PREV_YIELD')
-        yield_fts = yield_fts.withColumnRenamed('PREV_YEAR2', 'PREV_YEAR')
+      yield_fts = yield_fts.withColumn('YIELD-' + str(i+1),
+                                       SparkF.lag(yield_fts.YIELD, i+1).over(my_window))
+      yield_fts = yield_fts.withColumn('YEAR-' + str(i+1),
+                                       SparkF.lag(yield_fts.FYEAR, i+1).over(my_window))
 
-    yield_fts = yield_fts.withColumnRenamed('PREV_YIELD', 'YIELD-' + str(trend_window))
-    yield_fts = yield_fts.withColumnRenamed('PREV_YEAR', 'YEAR-' + str(trend_window))
-
+    # drop columns withs null values
     for i in range(trend_window):
       yield_fts = yield_fts.filter(SparkF.col('YIELD-' + str(i+1)).isNotNull())
 
