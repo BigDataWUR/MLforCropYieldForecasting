@@ -9,7 +9,7 @@ run_tests = False
 nuts_levels = ['NUTS' + str(i) for i in range(4)]
 
 # country codes
-countries = ['NL', 'FR', 'DE']
+countries = ['BG', 'DE', 'ES', 'FR', 'HU', 'IT', 'NL', 'PL', 'RO']
 
 # debug levels
 debug_levels = [i for i in range(5)]
@@ -19,6 +19,7 @@ debug_levels = [i for i in range(5)]
 
 # crop name to id mapping
 crop_id_dict = {
+    'grain maize': 2,
     'sugar beet' : 6,
     'sugarbeet' : 6,
     'sugarbeets' : 6,
@@ -34,6 +35,7 @@ crop_id_dict = {
 
 # crop id to name mapping
 crop_name_dict = {
+    2 : 'grain maize',
     6 : 'sugarbeet',
     7 : 'potatoes',
     90 : 'soft wheat',
