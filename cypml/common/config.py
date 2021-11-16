@@ -24,9 +24,13 @@ from sklearn.metrics import r2_score
 from sklearn.metrics import explained_variance_score
 from sklearn.metrics import median_absolute_error
 
+from sklearn.utils.fixes import loguniform
+import scipy.stats as stats
+from skopt.space import Real, Categorical, Integer
+
 from . import globals
 from .util import cropNameToID, cropIDToName
-from .util import mean_absolute_percentage_error 
+from .util import meanAbsolutePercentageError
 
 if (globals.test_env == 'pkg'):
   crop_id_dict = globals.crop_id_dict
@@ -43,11 +47,8 @@ class CYPConfiguration:
         'season_crosses_calendar_year' : season_cross,
         'country_code' : country_code,
         'nuts_level' : 'NUTS2',
-        'data_sources' : { 'WOFOST' : 'NUTS2',
-                           'METEO_DAILY' : 'NUTS2',
-                           'SOIL' : 'NUTS2',
-                           'YIELD' : 'NUTS2',
-                         },
+        'data_sources' : [ 'WOFOST', 'METEO_DAILY', 'SOIL', 'YIELD' ],
+        'clean_data' : 'N',
         'use_yield_trend' : 'N',
         'predict_yield_residuals' : 'N',
         'find_optimal_trend_window' : 'N',
@@ -55,12 +56,17 @@ class CYPConfiguration:
         'trend_windows' : [5, 7, 10],
         'use_centroids' : 'N',
         'use_remote_sensing' : 'Y',
+        'use_gaes' : 'N',
+        'use_per_year_crop_calendar' : 'N',
         'early_season_prediction' : 'N',
-        'early_season_end_dekad' : 15,
+        'early_season_end_dekad' : 0,
         'data_path' : '.',
         'output_path' : '.',
+        'use_features_v2' : 'N',
         'save_features' : 'N',
         'use_saved_features' : 'N',
+        'use_sample_weights' : 'N',
+        'retrain_per_test_year' : 'N',
         'save_predictions' : 'Y',
         'use_saved_predictions' : 'N',
         'compare_with_mcyfs' : 'N',
@@ -76,18 +82,24 @@ class CYPConfiguration:
         'country_code' : 'Country code (e.g. NL)',
         'nuts_level' : 'NUTS level for yield prediction',
         'data_sources' : 'Input data sources',
+        'clean_data' : 'Remove data or regions with duplicate or missing values',
         'use_yield_trend' : 'Estimate and use yield trend',
         'predict_yield_residuals' : 'Predict yield residuals instead of full yield',
         'find_optimal_trend_window' : 'Find optimal trend window',
         'trend_windows' : 'List of trend window lengths (number of years)',
         'use_centroids' : 'Use centroid coordinates and distance to coast',
         'use_remote_sensing' : 'Use remote sensing data (FAPAR)',
+        'use_gaes' : 'Use agro-environmental zones data',
+        'use_per_year_crop_calendar' : 'Use per region per year crop calendar',
         'early_season_prediction' : 'Predict yield early in the season',
         'early_season_end_dekad' : 'Early season end dekad relative to harvest',
         'data_path' : 'Path to all input data. Default is current directory.',
         'output_path' : 'Path to all output files. Default is current directory.',
+        'use_features_v2' : 'Use feature design v2',
         'save_features' : 'Save features to a CSV file',
         'use_saved_features' : 'Use features from a CSV file',
+        'use_sample_weights' : 'Use data sample weights based on crop area',
+        'retrain_per_test_year' : 'Retrain a model for every test year',
         'save_predictions' : 'Save predictions to a CSV file',
         'use_saved_predictions' : 'Use predictions from a CSV file',
         'compare_with_mcyfs' : 'Compare predictions with MARS Crop Yield Forecasting System',
@@ -95,6 +107,9 @@ class CYPConfiguration:
     }
 
     ########### Machine learning configuration ###########
+    # mutual correlation threshold for features
+    self.feature_correlation_threshold = 0.9
+
     # test fraction
     self.test_fraction = 0.3
 
@@ -108,71 +123,47 @@ class CYPConfiguration:
     self.estimators = {
         # linear model
         'Ridge' : {
-            'estimator' : Ridge(alpha=1, random_state=42, max_iter=1000,
-                                copy_X=True, fit_intercept=True),
-            'fs_param_grid' : dict(estimator__alpha=[1e-1]),
-            'param_grid' : dict(estimator__alpha=[1e-5, 1e-2, 1e-1, 0.5, 1, 5, 10])
+            'estimator' : Ridge(random_state=42, max_iter=1000, tol=1e-3,
+                                normalize=False, fit_intercept=True),
+            'param_space' : {
+                "estimator__alpha": Real(1e-1, 1e+2, prior='log-uniform')
+            }
         },
         'KNN' : {
-            'estimator' : KNeighborsRegressor(weights='distance'),
-            'fs_param_grid' : dict(estimator__n_neighbors=[5]),
-            'param_grid' : dict(estimator__n_neighbors=[3, 5, 7, 9])
+            'estimator' : KNeighborsRegressor(n_jobs=-1),
+            'param_space' : {
+                "estimator__n_neighbors": Integer(7, 15),
+                "estimator__weights": Categorical(['uniform', 'distance']),
+                "estimator__metric" : Categorical(['minkowski', 'manhattan']),# hassanatDistance])
+            }
         },
         # SVM regression
         'SVR' : {
-            'estimator' : SVR(kernel='rbf', gamma='scale', max_iter=-1,
-                              shrinking=True, tol=0.001),
-            'fs_param_grid' : dict(estimator__C=[10.0],
-                                   estimator__epsilon=[0.5]),
-            'param_grid' : dict(estimator__C=[1e-1, 5e-1, 1.0, 5.0, 10.0, 50.0, 100.0, 200.0],
-                                estimator__epsilon=[1e-2, 1e-1, 0.5, 1.0, 5.0]),
+            'estimator' : SVR(gamma='scale', epsilon=1e-1, tol=1e-3,
+                              max_iter=1000, shrinking=True),
+            'param_space' : {
+                "estimator__C": Real(1e-2, 5e+2, prior='log-uniform'),
+                "estimator__epsilon": Real(1e-2, 5e-1, prior='log-uniform'),
+                "estimator__gamma": Categorical(['auto', 'scale']),
+                "estimator__kernel": Categorical(['rbf', 'linear']),
+            }
         },
-        # random forest
-        #'RF' : {
-        #    'estimator' : RandomForestRegressor(bootstrap=True, random_state=42,
-        #                                        oob_score=True, min_samples_leaf=5),
-        #    'fs_param_grid' : dict(estimator__max_depth=[7],
-        #                           estimator__n_estimators=[100]),
-        #    'param_grid' : dict(estimator__max_depth=[5, 7],
-        #                        estimator__n_estimators=[100, 500])
-        #},
-        # extra randomized trees
-        #'ERT' : {
-        #    'estimator' : ExtraTreesRegressor(bootstrap=True, random_state=42,
-        #                                      oob_score=True, min_samples_leaf=5),
-        #    'fs_param_grid' : dict(estimator__max_depth=[7],
-        #                           estimator__n_estimators=[100]),
-        #    'param_grid' : dict(estimator__max_depth=[5, 7],
-        #                        estimator__n_estimators=[100, 500])
-        #},
         # gradient boosted decision trees
         'GBDT' : {
-            'estimator' : GradientBoostingRegressor(learning_rate=0.01,
-                                                    subsample=0.8, loss='lad',
-                                                    min_samples_leaf=5,
-                                                    random_state=42),
-            'fs_param_grid' : dict(estimator__max_depth=[5],
-                                   estimator__n_estimators=[100]),
-            'param_grid' : dict(estimator__max_depth=[5, 10, 15],
-                                estimator__n_estimators=[100, 500])
-        },
-        #'MLP' : {
-        #    'estimator' : MLPRegressor(batch_size='auto', learning_rate='adaptive',
-        #                               solver='sgd', activation='relu',
-        #                               learning_rate_init=0.01, power_t=0.5,
-        #                               max_iter=1000, shuffle=True,
-        #                               random_state=42, tol=0.001,
-        #                               verbose=False, warm_start=False,
-        #                               momentum=0.9, nesterovs_momentum=True,
-        #                               early_stopping=True,
-        #                               validation_fraction=0.4, beta_1=0.9,
-        #                               beta_2=0.999, epsilon=1e-08),
-        #    'fs_param_grid' : dict(estimator__hidden_layer_sizes=[(10, 10), (15,15)],
-        #                           estimator__alpha=[0.2, 0.3]),
-        #    'param_grid' : dict(estimator__hidden_layer_sizes=[(10, 10), (15, 15), (20, 20)],
-        #                        estimator__alpha=[0.1, 0.2, 0.3]),
-        #},
-   }
+            'estimator' : GradientBoostingRegressor(loss='huber', max_features='log2',
+                                                    max_depth=10, min_samples_leaf=10,
+                                                    tol=1e-3, n_iter_no_change=5,
+                                                    subsample=0.6, ccp_alpha=1e-2,
+                                                    n_estimators=500, random_state=42),
+            'param_space' : {
+                "estimator__learning_rate": Real(1e-3, 1e-1, prior='log-uniform'),
+                "estimator__loss" : Categorical(['huber', 'lad']),
+                # "estimator__max_depth": Integer(5, 10),
+                "estimator__min_samples_leaf": Integer(5, 20),
+                # "estimator__n_estimators": Integer(100, 500),
+            }
+        }
+    }
 
     # k-fold validation metric for feature selection
     self.fs_cv_metric = 'neg_mean_squared_error'
@@ -186,13 +177,13 @@ class CYPConfiguration:
     # 'neg_mean_squared_log_error', 'neg_median_absolute_error', 'r2'
     self.eval_metrics = {
         # EXP_VAR (y_true, y_obs) = 1 - ( var(y_true - y_obs) / var (y_true) )
-        #'EXP_VAR' : explained_variance_score,
+        # 'EXP_VAR' : explained_variance_score,
         # MAE (y_true, y_obs) = ( 1 / n ) * sum_i-n ( | y_true_i - y_obs_i | )
-        'MAE' : mean_absolute_error,
+        # 'MAE' : mean_absolute_error,
         # MdAE (y_true, y_obs) = median ( | y_true_1 - y_obs_1 |, | y_true_2 - y_obs_2 |, ... )
-        #'MdAE' : median_absolute_error,
+        # 'MdAE' : median_absolute_error,
         # MAPE (y_true, y_obs) = ( 1 / n ) * sum_i-n ( ( y_true_i - y_obs_i ) / y_true_i )
-        'MAPE' : mean_absolute_percentage_error,
+        'MAPE' : meanAbsolutePercentageError,
         # MSE (y_true, y_obs) = ( 1 / n ) * sum_i-n ( y_true_i - y_obs_i )^2
         'RMSE' : mean_squared_error,
         # R2 (y_true, y_obs) = 1 - ( ( sum_i-n ( y_true_i - y_obs_i )^2 )
@@ -290,6 +281,16 @@ class CYPConfiguration:
     """Return the data sources"""
     return self.config['data_sources']
 
+  def setCleanData(self, clean_data):
+    """Set whether to clean data with duplicate or missing values"""
+    do_clean = clean_data.upper()
+    assert do_clean in ['Y', 'N']
+    self.config['clean_data'] = do_clean
+
+  def cleanData(self):
+    """Return whether to clean data with duplicate or missing values"""
+    return (self.config['clean_data'] == 'Y')
+
   def setUseYieldTrend(self, use_trend):
     """Set whether to use yield trend"""
     use_yt = use_trend.upper()
@@ -357,6 +358,28 @@ class CYPConfiguration:
     """Return whether to use remote sensing data"""
     return (self.config['use_remote_sensing'] == 'Y')
 
+  def setUseGAES(self, use_gaes):
+    """Set whether to use GAES data"""
+    use_aez = use_gaes.upper()
+    assert use_aez in ['Y', 'N']
+    self.config['use_gaes'] = use_aez
+    self.updateDataSources('GAES', use_aez)
+    self.updateDataSources('CROP_AREA', use_aez)
+
+  def useGAES(self):
+    """Return whether to use GAES data"""
+    return (self.config['use_gaes'] == 'Y')
+
+  def setUsePerYearCropCalendar(self, use_per_year_cc):
+    """Set whether to use per region, per year crop calendar"""
+    per_year = use_per_year_cc.upper()
+    assert per_year in ['Y', 'N']
+    self.config['use_per_year_crop_calendar'] = per_year
+
+  def usePerYearCropCalendar(self):
+    """Return whether to use per region, per year crop calendar"""
+    return (self.config['use_per_year_crop_calendar'] == 'Y')
+
   def setEarlySeasonPrediction(self, early_season):
     """Set whether to do early season prediction"""
     ep = early_season.upper()
@@ -394,6 +417,16 @@ class CYPConfiguration:
     """Return the path to output files."""
     return self.config['output_path']
 
+  def setUseFeaturesV2(self, use_v2):
+    """Set whether to use features v2"""
+    ft_v2 = use_v2.upper()
+    assert ft_v2 in ['Y', 'N']
+    self.config['use_features_v2'] = ft_v2
+
+  def useFeaturesV2(self):
+    """Return whether to use features v2"""
+    return (self.config['use_features_v2'] == 'Y')
+
   def setSaveFeatures(self, save_ft):
     """Set whether to save features in a CSV file"""
     sft = save_ft.upper()
@@ -413,6 +446,26 @@ class CYPConfiguration:
   def useSavedFeatures(self):
     """Return whether to use to use features from CSV file"""
     return (self.config['use_saved_features'] == 'Y')
+
+  def setUseSampleWeights(self, use_weights):
+    """Set whether to use data sample weights"""
+    use_sw = use_weights.upper()
+    assert use_sw in ['Y', 'N']
+    self.config['use_sample_weights'] = use_sw
+
+  def useSampleWeights(self):
+    """Return whether to use data sample weights"""
+    return (self.config['use_sample_weights'] == 'Y')
+
+  def setRetrainPerTestYear(self, per_test_year):
+    """Set whether to retrain the model for every test year"""
+    pty = per_test_year.upper()
+    assert pty in ['Y', 'N']
+    self.config['retrain_per_test_year'] = pty
+
+  def retrainPerTestYear(self):
+    """Return whether to retrain the model for every test year"""
+    return (self.config['retrain_per_test_year'] == 'Y')
 
   def setSavePredictions(self, save_pred):
     """Set whether to save predictions in a CSV file"""
@@ -465,6 +518,7 @@ class CYPConfiguration:
           'crop_id' : self.setCropID,
           'use_centroids' : self.setUseCentroids,
           'use_remote_sensing' : self.setUseRemoteSensing,
+          'use_gaes' : self.setUseGAES,
       }
 
       if (k not in special_cases):
@@ -503,6 +557,15 @@ class CYPConfiguration:
     print(config_str)
 
   # Machine learning configuration
+  def getFeatureCorrelationThreshold(self):
+    """Return threshold for removing mutually correlated features"""
+    return self.feature_correlation_threshold
+
+  def setFeatureCorrelationThreshold(self, corr_thresh):
+    """Set threshold for removing mutually correlated features"""
+    assert (corr_thresh > 0.0 and corr_thresh < 1.0)
+    self.feature_correlation_threshold = corr_thresh
+
   def getTestFraction(self):
     """Return test set fraction (of full dataset)"""
     return self.test_fraction
@@ -539,54 +602,54 @@ class CYPConfiguration:
     assert est_metric in self.eval_metrics
     self.est_cv_metric = est_metric
 
-  def getFeatureSelectors(self, X_train, Y_train, num_features,
-                          custom_cv):
+  def getFeatureSelectors(self, num_features):
     """Feature selection methods"""
     # already defined?
     if (len(self.feature_selectors) > 0):
       return self.feature_selectors
 
-    # NOTE: X_train, Y_train, custom_cv
-    # are for optimizing hyperparamters of rf and lasso used
-    # to define feature selectors. At the moment, we don't
-    # optimize hyperparameters.
-
     # Early season prediction can have less than 10 features
-    min_features = 10 if num_features > 10 else num_features
-    max_features = [min_features]
+    min_features = 10
+    if (num_features < 10):
+      min_features = num_features - 1
 
-    if (num_features > 15):
-      max_features.append(15)
-    if (num_features > 20):
-      max_features.append(20)
+    max_features = [i for i in range(1, num_features) if ((i % 10) == 0)]
+    if (not max_features):
+      max_features = [num_features]
 
-    use_yield_trend = self.useYieldTrend()
-    if ((num_features > 25) and (use_yield_trend)):
-      max_features.append(25)
+    rf = RandomForestRegressor(bootstrap=True, max_features='log2', ccp_alpha=1e-2,
+                               max_depth=10, min_samples_leaf=10, n_estimators=500,
+                               random_state=42, oob_score=True)
 
-    rf = RandomForestRegressor(n_estimators=100, max_depth=5,
-                               bootstrap=True, random_state=42,
-                               oob_score=True, min_samples_leaf=5)
-
-    lasso = Lasso(alpha=0.1, copy_X=True, fit_intercept=True,
-                  random_state=42,selection='cyclic', tol=0.01)
+    lasso = Lasso(copy_X=True, fit_intercept=True, normalize=False,
+                  tol=1e-3, random_state=42, selection='random')
 
     self.feature_selectors = {
       # random forest
       'random_forest' : {
           'selector' : SelectFromModel(rf, threshold='median'),
-          'param_grid' : dict(selector__max_features=max_features)
+          'param_space' : {
+              "selector__estimator__min_samples_leaf" : Integer(5, 20),
+              # "selector__estimator__n_estimators" : Integer(100, 500),
+              # "selector__estimator__max_depth" : Integer(5, 10),
+              "selector__max_features" : Integer(min_features, num_features),
+          }
       },
       # recursive feature elimination using Lasso
       'RFE_Lasso' : {
           'selector' : RFE(lasso),
-          'param_grid' : dict(selector__n_features_to_select=max_features)
+          'param_space' : {
+              "selector__estimator__alpha" : Real(1e-2, 1e+1, prior='log-uniform'),
+              "selector__n_features_to_select" : Integer(min_features, num_features),
+          }
       },
-      # NOTE: Mutual info raises an error when used with spark parallel backend.
+      # # NOTE: Mutual info raises an error when used with spark parallel backend.
       # univariate feature selection
       # 'mutual_info' : {
       #     'selector' : SelectKBest(mutual_info_regression),
-      #     'param_grid' : dict(selector__k=max_features)
+      #     'param_space' : {
+      #         "selector__k" : Integer(min_features, max_features),
+      #     }
       # },
     }
 
@@ -599,12 +662,12 @@ class CYPConfiguration:
     for sel in ft_sel:
       assert isinstance(sel, dict)
       assert 'selector' in sel
-      assert 'param_grid' in sel
+      assert 'param_space' in sel
       # add cases if other feature selection methods are used
       assert (isinstance(sel['selector'], SelectKBest) or
               isinstance(sel['selector'], SelectFromModel) or
               isinstance(sel['selector'], RFE))
-      assert isinstance(sel['param_grid'], dict)
+      assert isinstance(sel['param_space'], dict)
 
     self.feature_selectors = ft_sel
 
@@ -619,10 +682,8 @@ class CYPConfiguration:
     for est in estimators:
       assert isinstance(est, dict)
       assert 'estimator' in est
-      assert 'param_grid' in est
-      assert 'fs_param_grid' in est
-      assert isinstance(est['param_grid'], dict)
-      assert isinstance(est['fs_param_grid'], dict)
+      assert 'param_space' in est
+      assert isinstance(est['param_space'], dict)
 
     self.estimators = estimators
   

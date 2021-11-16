@@ -1,3 +1,20 @@
+def getTrendFeatureCols(ft_src):
+  """Features from previous years to capture feature trend"""
+  if (ft_src == 'WOFOST'):
+    return []
+  elif (ft_src == 'METEO'):
+    return ['avgPRECp5', 'Z-PRECp5', 'Z+PRECp5']
+  elif (ft_src == 'REMOTE_SENSING'):
+    return []
+
+def getCumulativeAvgCols(ft_src):
+  """columns or indicators using avg of cumulative values"""
+  cum_cols = []
+  if (ft_src == 'METEO'):
+    cum_cols = ['CWB']
+
+  return cum_cols
+
 def wofostMaxFeatureCols():
   """columns or indicators using max aggregation"""
   # must be in sync with crop calendar periods
@@ -52,7 +69,7 @@ def meteoMaxFeatureCols():
 
   return max_cols
 
-def meteoAvgFeatureCols():
+def meteoAvgFeatureCols(features_v2=False):
   """columns or indicators using avg aggregation"""
   # must be in sync with crop calendar periods
   avg_cols = {
@@ -63,6 +80,10 @@ def meteoAvgFeatureCols():
       'p4' : ['CWB'],
       'p5' : ['PREC'],
   }
+
+  if (features_v2):
+    avg_cols['p2'] = avg_cols['p2'] + ['RAD']
+    avg_cols['p4'] = avg_cols['p4'] + ['RAD']
 
   return avg_cols
 
@@ -118,7 +139,7 @@ def dropZeroColumns(pd_ft_dfs):
   pd_test_df = pd_ft_dfs[1]
 
   pd_train_df = pd_train_df.loc[:, (pd_train_df != 0.0).any(axis=0)]
-  pd_train_df = pd_train_df.dropna(axis=1)  
+  pd_train_df = pd_train_df.dropna(axis=1)
   pd_test_df = pd_test_df[pd_train_df.columns]
 
   return [pd_train_df, pd_test_df]
@@ -151,6 +172,9 @@ def createFeatures(cyp_config, cyp_featurizer, train_test_dfs,
   """Create WOFOST, Meteo and Remote Sensing features"""
   nuts_level = cyp_config.getNUTSLevel()
   use_remote_sensing = cyp_config.useRemoteSensing()
+  use_gaes = cyp_config.useGAES()
+  use_per_year_cc = cyp_config.usePerYearCropCalendar()
+  use_features_v2 = cyp_config.useFeaturesV2()
   debug_level = cyp_config.getDebugLevel()
 
   wofost_train_df = train_test_dfs['WOFOST'][0]
@@ -159,28 +183,38 @@ def createFeatures(cyp_config, cyp_featurizer, train_test_dfs,
   meteo_test_df = train_test_dfs['METEO'][1]
   yield_train_df = train_test_dfs['YIELD'][0]
 
-  dvs_summary = summary_dfs['WOFOST_DVS']
+  dvs_train = summary_dfs['WOFOST_DVS'][0]
+  dvs_test = summary_dfs['WOFOST_DVS'][1]
 
-  # Filter out years before min yield year
-  yield_min_year = yield_train_df.agg({"FYEAR": "MIN"}).collect()[0][0]
-  print('Yield min year', yield_min_year)
-
-  wofost_train_df = wofost_train_df.filter(wofost_train_df.CAMPAIGN_YEAR >= yield_min_year)
-  meteo_train_df = meteo_train_df.filter(meteo_train_df.CAMPAIGN_YEAR >= yield_min_year)
-  dvs_summary = dvs_summary.filter(dvs_summary.CAMPAIGN_YEAR >= yield_min_year)
+  if (debug_level > 2):
+    print('WOFOST training data size',
+          wofost_train_df.select(['IDREGION', 'CAMPAIGN_YEAR']).distinct().count())
+    print('WOFOST test data size',
+          wofost_test_df.select(['IDREGION', 'CAMPAIGN_YEAR']).distinct().count())
+    print('Meteo training data size',
+          meteo_train_df.select(['IDREGION', 'CAMPAIGN_YEAR']).distinct().count())
+    print('Meteo test data size',
+          meteo_test_df.select(['IDREGION', 'CAMPAIGN_YEAR']).distinct().count())
+    print('DVS Summary of training data',
+          dvs_summary_train.select(['IDREGION', 'CAMPAIGN_YEAR']).distinct().count())
+    print('DVS Summary of test data',
+          dvs_summary_test.select(['IDREGION', 'CAMPAIGN_YEAR']).distinct().count())
 
   rs_train_df = None
   rs_test_df = None
   if (use_remote_sensing):
     rs_train_df = train_test_dfs['REMOTE_SENSING'][0]
     rs_test_df = train_test_dfs['REMOTE_SENSING'][1]
-    rs_train_df = rs_train_df.filter(rs_train_df.CAMPAIGN_YEAR >= yield_min_year)
-    rs_test_df = rs_test_df.filter(rs_test_df.CAMPAIGN_YEAR >= yield_min_year)
+    if (debug_level > 2):
+      print('Remote sensing training data size',
+            rs_train_df.select(['IDREGION', 'CAMPAIGN_YEAR']).distinct().count())
+      print('Remote sensing test data size',
+            rs_test_df.select(['IDREGION', 'CAMPAIGN_YEAR']).distinct().count())
 
   join_cols = ['IDREGION', 'CAMPAIGN_YEAR']
   aggr_ft_cols = {
       'WOFOST' : [wofostMaxFeatureCols(), wofostAvgFeatureCols()],
-      'METEO' : [meteoMaxFeatureCols(), meteoAvgFeatureCols()],
+      'METEO' : [meteoMaxFeatureCols(), meteoAvgFeatureCols(use_features_v2)],
   }
 
   count_ft_cols = {
@@ -204,17 +238,29 @@ def createFeatures(cyp_config, cyp_featurizer, train_test_dfs,
     aggr_ft_cols['REMOTE_SENSING'] = [rsMaxFeatureCols(), rsAvgFeatureCols()]
     count_ft_cols['REMOTE_SENSING'] = {}
 
-  crop_cal_train = dvs_summary
-  crop_cal_test = dvs_summary
+  if (use_gaes):
+    aez_df = train_test_dfs['GAES'][0]
+    dvs_train = dvs_train.join(aez_df.select(['IDREGION', 'AEZ_ID']), 'IDREGION')
+    dvs_test = dvs_test.join(aez_df.select(['IDREGION', 'AEZ_ID']), 'IDREGION')
+
+  crop_cal_train = dvs_train
+  crop_cal_test = dvs_test
+  if (not use_per_year_cc):
+    crop_cal_test = dvs_train
 
   train_ft_dfs = {}
   test_ft_dfs = {}
   for ft_src in train_ft_src_dfs:
+    cum_avg_cols = []
+    if (use_features_v2):
+      cum_avg_cols = getCumulativeAvgCols(ft_src)
+
     train_ft_dfs[ft_src] = cyp_featurizer.extractFeatures(train_ft_src_dfs[ft_src],
                                                           ft_src,
                                                           crop_cal_train,
                                                           aggr_ft_cols[ft_src][0],
                                                           aggr_ft_cols[ft_src][1],
+                                                          cum_avg_cols,
                                                           count_ft_cols[ft_src],
                                                           join_cols,
                                                           True)
@@ -223,6 +269,7 @@ def createFeatures(cyp_config, cyp_featurizer, train_test_dfs,
                                                          crop_cal_test,
                                                          aggr_ft_cols[ft_src][0],
                                                          aggr_ft_cols[ft_src][1],
+                                                         cum_avg_cols,
                                                          count_ft_cols[ft_src],
                                                          join_cols)
 

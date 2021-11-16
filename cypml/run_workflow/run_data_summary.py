@@ -49,6 +49,7 @@ def summarizeData(cyp_config, cyp_summarizer, train_test_dfs):
   Summarize selected indicators for each data source.
   """
   wofost_train_df = train_test_dfs['WOFOST'][0]
+  wofost_test_df = train_test_dfs['WOFOST'][1]
   meteo_train_df = train_test_dfs['METEO'][0]
   yield_train_df = train_test_dfs['YIELD'][0]
 
@@ -63,10 +64,12 @@ def summarizeData(cyp_config, cyp_summarizer, train_test_dfs):
   # NOTE this summary of crops based on wofost data should be used with caution
   # 1. The summary is per region per year.
   # 2. The summary is based on wofost simulations not real sowing and harvest dates
-  dvs_summary = cyp_summarizer.wofostDVSSummary(wofost_train_df, early_season_end)
-  dvs_summary = dvs_summary.drop('CALENDAR_END_SEASON', 'CALENDAR_EARLY_SEASON')
+  dvs_summary_train = cyp_summarizer.wofostDVSSummary(wofost_train_df, early_season_end)
+  dvs_summary_train = dvs_summary_train.drop('CALENDAR_END_SEASON', 'CALENDAR_EARLY_SEASON')
+  dvs_summary_test = cyp_summarizer.wofostDVSSummary(wofost_test_df, early_season_end)
+  dvs_summary_test = dvs_summary_test.drop('CALENDAR_END_SEASON', 'CALENDAR_EARLY_SEASON')
   if (debug_level > 1):
-    printDataSummary(dvs_summary, 'WOFOST_DVS')
+    printDataSummary(dvs_summary_train, 'WOFOST_DVS')
 
   summary_cols = {
       'WOFOST' : getWOFOSTSummaryCols(),
@@ -98,7 +101,7 @@ def summarizeData(cyp_config, cyp_summarizer, train_test_dfs):
   if (debug_level > 2):
     printDataSummary(yield_summary, 'YIELD')
 
-  summary_dfs['WOFOST_DVS'] = dvs_summary
+  summary_dfs['WOFOST_DVS'] = [dvs_summary_train, dvs_summary_test]
   summary_dfs['YIELD'] = yield_summary
 
   return summary_dfs

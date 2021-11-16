@@ -26,7 +26,9 @@ def combineFeaturesLabels(cyp_config, sqlCtx,
   use_yield_trend = cyp_config.useYieldTrend()
   use_centroids = cyp_config.useCentroids()
   use_remote_sensing = cyp_config.useRemoteSensing()
+  use_gaes = cyp_config.useGAES()
   save_features = cyp_config.saveFeatures()
+  use_sample_weights = cyp_config.useSampleWeights()
   debug_level = cyp_config.getDebugLevel()
   
   combine_info = '\nCombine Features and Labels'
@@ -40,6 +42,15 @@ def combineFeaturesLabels(cyp_config, sqlCtx,
   combine_info += '\nData size after including SOIL data: '
   combine_info += '\nTrain ' + str(len(pd_train_df.index)) + ' rows.'
   combine_info += '\nTest ' + str(len(pd_test_df.index)) + ' rows.\n'
+
+  if (use_gaes):
+    pd_aez_df = prep_train_test_dfs['GAES'][0].toPandas()
+    pd_aez_df = pd_aez_df.drop(columns=['AEZ_ID'])
+    pd_train_df = pd_train_df.merge(pd_aez_df, on=['IDREGION'])
+    pd_test_df = pd_test_df.merge(pd_aez_df, on=['IDREGION'])
+    combine_info += '\nData size after including GAES data: '
+    combine_info += '\nTrain ' + str(len(pd_train_df.index)) + ' rows.'
+    combine_info += '\nTest ' + str(len(pd_test_df.index)) + ' rows.\n'
 
   if (use_centroids):
     # combine with region centroids
@@ -80,6 +91,16 @@ def combineFeaturesLabels(cyp_config, sqlCtx,
     combine_info += '\nTrain ' + str(len(pd_train_df.index)) + ' rows.'
     combine_info += '\nTest ' + str(len(pd_test_df.index)) + ' rows.\n'
 
+  if (use_gaes):
+    # combine with crop area
+    pd_area_train_df = prep_train_test_dfs['CROP_AREA'][0].toPandas()
+    pd_area_test_df = prep_train_test_dfs['CROP_AREA'][1].toPandas()
+    pd_train_df = pd_train_df.merge(pd_area_train_df, on=join_cols)
+    pd_test_df = pd_test_df.merge(pd_area_test_df, on=join_cols)
+    combine_info += '\nData size after including CROP_AREA data: '
+    combine_info += '\nTrain ' + str(len(pd_train_df.index)) + ' rows.'
+    combine_info += '\nTest ' + str(len(pd_test_df.index)) + ' rows.\n'
+
   if (use_yield_trend):
     # combine with yield trend features
     pd_yield_trend_train_ft = pd_feature_dfs['YIELD_TREND'][0]
@@ -99,6 +120,12 @@ def combineFeaturesLabels(cyp_config, sqlCtx,
   combine_info += '\nTrain ' + str(len(pd_train_df.index)) + ' rows.'
   combine_info += '\nTest ' + str(len(pd_test_df.index)) + ' rows.\n'
 
+  # sample weights
+  if (use_sample_weights):
+    assert use_gaes
+    pd_train_df['SAMPLE_WEIGHT'] = pd_train_df['CROP_AREA']
+    pd_test_df['SAMPLE_WEIGHT'] = pd_test_df['CROP_AREA']
+
   log_fh.write(combine_info + '\n')
   if (debug_level > 1):
     print(combine_info)
@@ -111,8 +138,9 @@ def combineFeaturesLabels(cyp_config, sqlCtx,
     early_season_prediction = cyp_config.earlySeasonPrediction()
     early_season_end = cyp_config.getEarlySeasonEndDekad()
     feature_file_path = cyp_config.getOutputPath()
-    features_file = getFeatureFilename(crop, country, use_yield_trend,
-                                       early_season_prediction, early_season_end)
+    features_file = getFeatureFilename(crop, use_yield_trend,
+                                       early_season_prediction, early_season_end,
+                                       country)
     save_ft_path = feature_file_path + '/' + features_file
     save_ft_info = '\nSaving features to: ' + save_ft_path + '[train, test].csv'
     log_fh.write(save_ft_info + '\n')

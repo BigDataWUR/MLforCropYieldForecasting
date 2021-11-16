@@ -1,6 +1,9 @@
 import sys
 import argparse
 
+import findspark
+findspark.init()
+
 import pyspark
 from pyspark import SparkContext
 from pyspark import SparkConf
@@ -19,12 +22,14 @@ if (globals.test_env == 'pkg'):
   from cypml.workflow.yield_trend import CYPYieldTrendEstimator
 
   from cypml.run_workflow.run_data_preprocessing import preprocessData
+  from cypml.run_workflow.run_train_test_split import splitDataIntoTrainingTestSets
   from cypml.run_workflow.run_data_summary import summarizeData
   from cypml.run_workflow.run_feature_design import createFeatures
   from cypml.run_workflow.run_trend_feature_design import createYieldTrendFeatures
-  from cypml.run_workflow.run_train_test_split import splitDataIntoTrainingTestSets
+  from cypml.run_workflow.run_trend_feature_design import addFeaturesFromPreviousYears
   from cypml.run_workflow.combine_features import combineFeaturesLabels
   from cypml.run_workflow.load_saved_features import loadSavedFeaturesLabels
+  from cypml.run_workflow.run_machine_learning import dropHighlyCorrelatedFeatures
   from cypml.run_workflow.run_machine_learning import getMachineLearningPredictions
   from cypml.run_workflow.run_machine_learning import saveMLPredictions
   from cypml.run_workflow.load_saved_predictions import loadSavedPredictions
@@ -41,6 +46,7 @@ def main():
     test_env = globals.test_env
     run_tests = globals.run_tests
 
+
   SparkContext.setSystemProperty('spark.executor.memory', '12g')
   SparkContext.setSystemProperty('spark.driver.memory', '6g')
   spark = SparkSession.builder.master("local[*]").getOrCreate()
@@ -53,7 +59,7 @@ def main():
   print('# Configuration  #')
   print('##################')
 
-  parser = argparse.ArgumentParser(prog='mlbaseline_pkg.py')
+  parser = argparse.ArgumentParser(prog='mlbaseline_plus_pkg.py')
 
   # Some command-line argument names are slightly different
   # from configuration option names for brevity.
@@ -69,7 +75,7 @@ def main():
                                   },
       '--country' : { 'type' : str,
                       'default' : 'NL',
-                      'choices' : ['NL', 'DE', 'FR'],
+                      'choices' : ['BG', 'DE', 'ES', 'FR', 'HU', 'IT', 'NL', 'PL', 'RO'],
                       'help' : 'country code (default: NL)',
                     },
       '--nuts-level' : { 'type' : str,
@@ -85,10 +91,15 @@ def main():
                           'default' : '.',
                           'help' : 'path to output files (default: .)',
                         },
+      '--clean-data' : { 'type' : str,
+                         'default' : 'Y',
+                         'choices' : ['Y', 'N'],
+                         'help' : 'remove data or regions with duplicate or missing values (default: Y)',
+                       },
       '--yield-trend' : { 'type' : str,
-                          'default' : 'N',
+                          'default' : 'Y',
                           'choices' : ['Y', 'N'],
-                          'help' : 'estimate and use yield trend (default: N)',
+                          'help' : 'estimate and use yield trend (default: Y)',
                         },
       '--optimal-trend-window' : { 'type' : str,
                                    'default' : 'N',
@@ -100,14 +111,19 @@ def main():
                                 'choices' : ['Y', 'N'],
                                 'help' : 'predict yield residuals instead of full yield (default: N)',
                               },
+      '--per-year-crop-calendar' : { 'type' : str,
+                                     'default' : 'Y',
+                                     'choices' : ['Y', 'N'],
+                                     'help' : 'use per region per year crop calendar (default: Y)',
+                                   },
       '--early-season' : { 'type' : str,
                            'default' : 'N',
                            'choices' : ['Y', 'N'],
                            'help' : 'early season prediction (default: N)',
                          },
       '--early-season-end' : { 'type' : int,
-                               'default' : 15,
-                               'help' : 'early season end dekad (default: 15)',
+                               'default' : 0,
+                               'help' : 'early season end dekad relative to harvest (default: 0)',
                              },
       '--centroids' : { 'type' : str,
                         'default' : 'N',
@@ -119,6 +135,16 @@ def main():
                              'choices' : ['Y', 'N'],
                              'help' : 'use remote sensing data (default: Y)',
                            },
+      '--gaes' : { 'type' : str,
+                   'default' : 'N',
+                   'choices' : ['Y', 'N'],
+                   'help' : 'use agro-environmental zones data',
+                 },
+      '--use-features-v2' : { 'type' : str,
+                              'default' : 'Y',
+                              'choices' : ['Y', 'N'],
+                              'help' : 'use feature design v2 (default: Y)',
+                            },
       '--save-features' : { 'type' : str,
                             'default' : 'N',
                             'choices' : ['Y', 'N'],
@@ -127,8 +153,18 @@ def main():
       '--use-saved-features' : { 'type' : str,
                                  'default' : 'N',
                                  'choices' : ['Y', 'N'],
-                                 'help' : 'use features from a CSV file (default: N). Set ',
+                                 'help' : 'use features from a CSV file (default: N)',
                                },
+      '--use-sample-weights' : { 'type' : str,
+                                 'default' : 'N',
+                                 'choices' : ['Y', 'N'],
+                                 'help' : 'Use crop area as sample weight (default N)',
+                               },
+      '--retrain-per-test-year' : { 'type' : str,
+                                    'default' : 'N',
+                                    'choices' : ['Y', 'N'],
+                                    'help' : 'retrain a model for every test year (default: N)',
+                                  },
       '--save-predictions' : { 'type' : str,
                                'default' : 'Y',
                                'choices' : ['Y', 'N'],
@@ -176,15 +212,21 @@ def main():
       'nuts_level' : args.nuts_level,
       'data_path' : args.data_path,
       'output_path' : args.output_path,
+      'clean_data' : args.clean_data,
       'use_yield_trend' : args.yield_trend,
       'find_optimal_trend_window' : args.optimal_trend_window,
       'predict_yield_residuals' : args.predict_residuals,
-      'early_season_prediction' : args.early_season,
-      'early_season_end_dekad' : args.early_season_end,
       'use_centroids' : args.centroids,
       'use_remote_sensing' : args.remote_sensing,
+      'use_gaes' : args.gaes,
+      'use_per_year_crop_calendar' : args.per_year_crop_calendar,
+      'early_season_prediction' : args.early_season,
+      'early_season_end_dekad' : args.early_season_end,
+      'use_features_v2' : args.use_features_v2,
       'save_features' : args.save_features,
       'use_saved_features' : args.use_saved_features,
+      'use_sample_weights' : args.use_sample_weights,
+      'retrain_per_test_year' : args.retrain_per_test_year,
       'save_predictions' : args.save_predictions,
       'use_saved_predictions' : args.use_saved_predictions,
       'compare_with_mcyfs' : args.compare_with_mcyfs,
@@ -203,8 +245,9 @@ def main():
   early_season_end = cyp_config.getEarlySeasonEndDekad()
 
   output_path = cyp_config.getOutputPath()
-  log_file = getLogFilename(crop, country, use_yield_trend,
-                            early_season_prediction, early_season_end)
+  log_file = getLogFilename(crop, use_yield_trend,
+                            early_season_prediction, early_season_end,
+                            country)
   log_fh = open(output_path + '/' + log_file, 'w+')
   cyp_config.printConfig(log_fh)
 
@@ -258,20 +301,28 @@ def main():
       print('# Feature Design  #')
       print('###################')
 
-      # WOFOST, Meteo and Remote Sensing features
+      # WOFOST, Meteo and Remote Sensing Features
       cyp_featurizer = CYPFeaturizer(cyp_config)
       pd_feature_dfs = createFeatures(cyp_config, cyp_featurizer,
                                       prep_train_test_dfs, summary_dfs, log_fh)
 
-      # yield trend features
+      # trend features
+      join_cols = ['IDREGION', 'FYEAR']
       if (use_yield_trend):
         yield_train_df = prep_train_test_dfs['YIELD'][0]
         yield_test_df = prep_train_test_dfs['YIELD'][1]
+
+        # Trend features from feature data
+        use_features_v2 = cyp_config.useFeaturesV2()
+        if (use_features_v2):
+          pd_feature_dfs = addFeaturesFromPreviousYears(cyp_config, pd_feature_dfs,
+                                                        1, test_years, join_cols)
 
         if (run_tests):
           test_yield_trend = TestYieldTrendEstimator(yield_train_df)
           test_yield_trend.runAllTests()
 
+        # Trend features from label data
         cyp_trend_est = CYPYieldTrendEstimator(cyp_config)
         pd_yield_train_ft, pd_yield_test_ft = createYieldTrendFeatures(cyp_config, cyp_trend_est,
                                                                        yield_train_df, yield_test_df,
@@ -279,10 +330,10 @@ def main():
         pd_feature_dfs['YIELD_TREND'] = [pd_yield_train_ft, pd_yield_test_ft]
 
       # combine features
-      join_cols = ['IDREGION', 'FYEAR']
       pd_train_df, pd_test_df = combineFeaturesLabels(cyp_config, sqlContext,
                                                       prep_train_test_dfs, pd_feature_dfs,
                                                       join_cols, log_fh)
+
     # use saved features
     else:
       pd_train_df, pd_test_df = loadSavedFeaturesLabels(cyp_config, spark)
@@ -290,6 +341,11 @@ def main():
     print('###################################')
     print('# Machine Learning using sklearn  #')
     print('###################################')
+
+    # drop mutually correlated features
+    corr_threshold = cyp_config.getFeatureCorrelationThreshold()
+    pd_train_df, pd_test_df = dropHighlyCorrelatedFeatures(cyp_config, pd_train_df, pd_test_df,
+                                                           log_fh, corr_thresh=corr_threshold)
 
     pd_ml_predictions = getMachineLearningPredictions(cyp_config, pd_train_df, pd_test_df, log_fh)
     save_predictions = cyp_config.savePredictions()
@@ -308,4 +364,4 @@ def main():
   log_fh.close()
 
 if __name__ == '__main__':
-    main()
+  main()

@@ -8,7 +8,7 @@ if (globals.test_env == 'pkg'):
 
   from ..common.util import getYear, getDekad, getMonth, getDay
   from ..common.util import cropIDToName, cropNameToID
-  from ..common.util import printFeatures, plotTrend, plotTrueVSPredicted 
+  from ..common.util import printInGroups, plotTrend, plotTrueVSPredicted 
 
 class TestUtil():
   def __init__(self, spark):
@@ -93,8 +93,8 @@ class TestUtil():
     print('Soybean:', crop_id)
     assert crop_id == 0
 
-  def testPrintFeatures(self):
-    print('\n Test printFeatures')
+  def testPrintInGroups(self):
+    print('\n Test printInGroups')
     features = ['feat' + str(i+1) for i in range(15)]
     num_features = len(features)
     num_half = np.cast['int64'](np.floor(num_features/2))
@@ -102,9 +102,9 @@ class TestUtil():
     indices2 = [ 2*i for i in range(num_half)]
     indices3 = [ (2*i + 1) for i in range(num_half)]
 
-    printFeatures(features, indices1)
-    printFeatures(features, indices2)
-    printFeatures(features, indices3)
+    printInGroups(features, indices1)
+    printInGroups(features, indices2)
+    printInGroups(features, indices3)
 
   def testPlotTrend(self):
     print('\n Test plotTrend')
@@ -143,7 +143,7 @@ class TestUtil():
     self.testGetDekad()
     self.testCropIDToName()
     self.testCropNameToID()
-    self.testPrintFeatures()
+    self.testPrintInGroups()
     self.testPlotTrend()
     self.testPlotTrueVSPredicted()
     print('\nTest Utility Functions END\n')

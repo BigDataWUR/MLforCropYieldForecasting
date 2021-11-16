@@ -51,7 +51,7 @@ class TestCustomTrainTestSplit:
     pd_yield_train_df = yield_train_df.toPandas()
     Y_train_full = pd_yield_train_df[yield_cols].values
 
-    custom_cv = self.trTsSplitter.customKFoldValidationSplit(Y_train_full, num_folds)
+    custom_cv, _ = self.trTsSplitter.customKFoldValidationSplit(Y_train_full, num_folds)
 
   def runAllTests(self):
     print('\nTest Custom Train, Test Splitter BEGIN\n')

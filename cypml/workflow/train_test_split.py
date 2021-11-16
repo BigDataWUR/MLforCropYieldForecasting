@@ -45,17 +45,18 @@ class CYPTrainTestSplitter:
     all_years = sorted(np.unique(Y_train_full[:, 1]))
     num_years = len(all_years)
     num_test_years = 1
-    num_train_years = num_years - num_test_years * num_folds
+    num_train_years = num_years - (num_test_years * num_folds)
 
     custom_cv = []
     custom_split_info = '\nCustom sliding validation train, test splits'
     custom_split_info += '\n----------------------------------------------'
 
+    cv_test_years = []
     for k in range(num_folds):
-      train_years_start = k * num_test_years
-      test_years_start = train_years_start + num_train_years
-      train_years = all_years[train_years_start:test_years_start]
+      test_years_start = num_train_years + (k * num_test_years)
+      train_years = all_years[:test_years_start]
       test_years = all_years[test_years_start:test_years_start + num_test_years]
+      cv_test_years += test_years
       test_indexes = np.ravel(np.nonzero(np.isin(Y_train_full[:, 1], test_years)))
       train_indexes = np.ravel(np.nonzero(np.isin(Y_train_full[:, 1], train_years)))
       custom_cv.append(tuple((train_indexes, test_indexes)))
@@ -72,4 +73,4 @@ class CYPTrainTestSplitter:
     if (self.verbose > 1):
       print(custom_split_info)
 
-    return custom_cv
+    return custom_cv, cv_test_years

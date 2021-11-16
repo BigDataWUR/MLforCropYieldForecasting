@@ -15,8 +15,9 @@ def loadSavedFeaturesLabels(cyp_config, spark):
   debug_level = cyp_config.getDebugLevel()
 
   feature_file_path = cyp_config.getOutputPath()
-  feature_file = getFeatureFilename(crop, country, use_yield_trend,
-                                    early_season_prediction, early_season_end)
+  feature_file = getFeatureFilename(crop, use_yield_trend,
+                                    early_season_prediction, early_season_end,
+                                    country)
 
   load_ft_path = feature_file_path + '/' + feature_file
   pd_train_df = pd.read_csv(load_ft_path + '_train.csv', header=0)

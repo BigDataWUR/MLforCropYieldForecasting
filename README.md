@@ -1,4 +1,4 @@
-# Implementation of Machine Learning Baseline for Crop Yield Prediction
+# Improvements to the ML Baseline for Crop Yield Prediction
 
 ## Test Environment
 Google Colab environment or Microsoft Azure Databricks can be used to run
@@ -45,7 +45,7 @@ To run the script in Google Dataproc environment, download the python sript and
 4. Upload data to storage bucket: create data/ and scripts/ directories inside
    the bucket. Inside data create directories for countries, e.g. NUTS2-NL,
    NUTS3-FR. Upload data for the Netherlands to data/NUTS2-NL/ and data for
-   France to data/NUTS3-FR. Upload *mlbaseline.py* script to scripts/.
+   France to data/NUTS3-FR. Upload *mlbaseline_plus.py* script to scripts/.
 5. Copy *pip-install.sh*. Use the following commad in Google Cloud Shell.
 
 `$ gsutil cp gs://dataproc-initialization-actions/python/pip-install.sh gs://ml-spark-1/scripts`
@@ -56,13 +56,13 @@ To run the script in Google Dataproc environment, download the python sript and
 
 `$ gcloud dataproc jobs submit pyspark --cluster=ml-spark-cluster1 --region=europe-west1 \`
 
-`  gs://ml-spark-1/scripts/mlbaseline.py -- \`
+`  gs://ml-spark-1/scripts/mlbaseline_plus.py -- \`
 
 `  --country NL --nuts-level NUTS2 --crop potatoes`
 
 `  --data-path gs://ml-spark-1/data/NUTS2-NL --output-path gs://ml-spark-1/output`
 
-Options supported by `mlbaseline.py`:
+Options supported by `mlbaseline_plus.py`:
 
 ` args_dict = {
 
@@ -79,7 +79,7 @@ Options supported by `mlbaseline.py`:
 
       '--country' : { 'type' : str,
                       'default' : 'NL',
-                      'choices' : ['NL', 'DE', 'FR'],
+                      'choices' : ['BG', 'DE', 'ES', 'FR', 'HU', 'IT', 'NL', 'PL', 'RO'],
                       'help' : 'country code (default: NL)',
                     },
 
@@ -99,10 +99,16 @@ Options supported by `mlbaseline.py`:
                           'help' : 'path to output files (default: .)',
                         },
 
+      '--clean-data' : { 'type' : str,
+                         'default' : 'Y',
+                         'choices' : ['Y', 'N'],
+                         'help' : 'remove data or regions with duplicate or missing values (default: Y)',
+                       },
+
       '--yield-trend' : { 'type' : str,
-                          'default' : 'N',
+                          'default' : 'Y',
                           'choices' : ['Y', 'N'],
-                          'help' : 'estimate and use yield trend (default: N)',
+                          'help' : 'estimate and use yield trend (default: Y)',
                         },
 
       '--optimal-trend-window' : { 'type' : str,
@@ -117,6 +123,12 @@ Options supported by `mlbaseline.py`:
                                 'help' : 'predict yield residuals instead of full yield (default: N)',
                               },
 
+      '--per-year-crop-calendar' : { 'type' : str,
+                                     'default' : 'Y',
+                                     'choices' : ['Y', 'N'],
+                                     'help' : 'use per region per year crop calendar (default: Y)',
+                                   },
+
       '--early-season' : { 'type' : str,
                            'default' : 'N',
                            'choices' : ['Y', 'N'],
@@ -124,8 +136,8 @@ Options supported by `mlbaseline.py`:
                          },
 
       '--early-season-end' : { 'type' : int,
-                               'default' : 15,
-                               'help' : 'early season end dekad (default: 15)',
+                               'default' : 0,
+                               'help' : 'early season end dekad (default: 0)',
                              },
 
       '--centroids' : { 'type' : str,
@@ -140,6 +152,18 @@ Options supported by `mlbaseline.py`:
                              'help' : 'use remote sensing data (default: Y)',
                            },
 
+      '--gaes' : { 'type' : str,
+                   'default' : 'N',
+                   'choices' : ['Y', 'N'],
+                   'help' : 'use agro-environmental zones data',
+                 },
+
+      '--use-features-v2' : { 'type' : str,
+                              'default' : 'Y',
+                              'choices' : ['Y', 'N'],
+                              'help' : 'use feature design v2 (default: Y)',
+                            },
+
       '--save-features' : { 'type' : str,
                             'default' : 'N',
                             'choices' : ['Y', 'N'],
@@ -149,8 +173,20 @@ Options supported by `mlbaseline.py`:
       '--use-saved-features' : { 'type' : str,
                                  'default' : 'N',
                                  'choices' : ['Y', 'N'],
-                                 'help' : 'use features from a CSV file (default: N). Set ',
+                                 'help' : 'use features from a CSV file (default: N)',
                                },
+
+      '--use-sample-weights' : { 'type' : str,
+                                 'default' : 'N',
+                                 'choices' : ['Y', 'N'],
+                                 'help' : 'Use recency as data sample weight (default N)',
+                               },
+
+      '--retrain-per-test-year' : { 'type' : str,
+                                    'default' : 'N',
+                                    'choices' : ['Y', 'N'],
+                                    'help' : 'retrain a model for every test year (default: N)',
+                                  },
 
       '--save-predictions' : { 'type' : str,
                                'default' : 'Y',

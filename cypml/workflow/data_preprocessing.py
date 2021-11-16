@@ -243,11 +243,99 @@ class CYPDataPreprocessor:
   def preprocessAreaFractions(self, af_df, crop_id):
     """Filter area fractions data by crop id"""
     af_df = af_df.withColumn("FYEAR", af_df["FYEAR"].cast(SparkT.IntegerType()))
-    af_df = af_df.filter(af_df.CROP_ID == crop_id).drop('CROP_ID')
+    af_df = af_df.filter(af_df["CROP_ID"] == crop_id).drop('CROP_ID')
 
     return af_df
 
-  def preprocessYield(self, yield_df, crop_id):
+  def preprocessCropArea(self, area_df, crop_id):
+    """Filter area fractions data by crop id"""
+    area_df = area_df.withColumn("FYEAR", area_df["FYEAR"].cast(SparkT.IntegerType()))
+    area_df = area_df.filter(area_df["CROP_ID"] == crop_id).drop('CROP_ID')
+    area_df = area_df.filter(area_df["CROP_AREA"].isNotNull())
+    area_df = area_df.drop('FRACTION')
+
+    return area_df
+
+  def preprocessGAES(self, gaes_df, crop_id):
+    """Select irrigated crop area by crop id"""
+    sel_cols = [ c for c in gaes_df.columns if 'IRRIG' not in c]
+    sel_cols += ['IRRIG_AREA_ALL', 'IRRIG_AREA' + str(crop_id)]
+
+    return gaes_df.select(sel_cols)
+
+  def removeDuplicateYieldData(self, yield_df, short_seq_len=2, long_seq_len=5,
+                               max_short_seqs=1, max_long_seqs=0):
+    """
+    Find and remove duplicate sequences of yield values.
+    Missing values are replaced with 0.0. So missing values are also handled.
+    Using some ideas from
+    https://stackoverflow.com/questions/51291226/finding-length-of-continuous-ones-in-list-in-a-pyspark-column
+    """
+    w = Window.partitionBy('IDREGION').orderBy('FYEAR')
+    # check if value changes from one year to next
+    yield_df = yield_df.select('*',
+                               (yield_df['YIELD'] != SparkF.lag(yield_df['YIELD'], default=0)\
+                                .over(w)).cast("int").alias("YIELD_CHANGE"),
+                               (yield_df['FYEAR'] - SparkF.lag(yield_df['FYEAR'], default=0)\
+                                .over(w)).cast("int").alias("FYEAR_CHANGE"))
+    # group set of years with the same value
+    yield_df = yield_df.select('*',
+                               SparkF.sum(SparkF.col("YIELD_CHANGE"))\
+                               .over(w.rangeBetween(Window.unboundedPreceding, 0)).alias("YIELD_GROUP"))
+
+    w2 = Window.partitionBy(['IDREGION', 'YIELD_GROUP'])
+    # compute the start, end and length of duplicate sequence
+    yield_df = yield_df.select('*',
+                               SparkF.min("FYEAR").over(w2).alias("SEQ_START"),
+                               SparkF.max("FYEAR").over(w2).alias("SEQ_END"),
+                               SparkF.count("*").over(w2).alias("SEQ_LEN"))
+
+    w3 = Window.partitionBy('IDREGION')
+    # compute max year
+    yield_df = yield_df.select('*',
+                               SparkF.min("FYEAR").over(w3).alias("MIN_FYEAR"),
+                               SparkF.max("FYEAR").over(w3).alias("MAX_FYEAR"))
+    # For sequences ending in max year, we remove data points only.
+    # So such sequences are not counted here.
+    yield_df = yield_df.select('*',
+                               # count number of short sequences except those ending at max(FYEAR)
+                               SparkF.sum(SparkF.when((yield_df['SEQ_LEN'] > short_seq_len) &
+                                                      # (yield_df['SEQ_END'] != yield_df['MAX_FYEAR']) &
+                                                      (yield_df['FYEAR'] == yield_df['SEQ_END']), 1)\
+                                          .otherwise(0)).over(w3).alias('COUNT_SHORT_SEQ'),
+                               # count number of long sequences except those ending at max(FYEAR)
+                               SparkF.sum(SparkF.when((yield_df['SEQ_LEN'] > long_seq_len) &
+                                                      (yield_df['SEQ_END'] != yield_df['MAX_FYEAR']) &
+                                                      (yield_df['FYEAR'] == yield_df['SEQ_END']), 1)\
+                                          .otherwise(0)).over(w3).alias('COUNT_LONG_SEQ'),
+                               # count missing years
+                               SparkF.sum(SparkF.when((yield_df['FYEAR'] != yield_df['MIN_FYEAR']) &
+                                                       (yield_df['FYEAR_CHANGE'] > short_seq_len), 1)\
+                                          .otherwise(0)).over(w3).alias('COUNT_SHORT_GAPS'),
+                               SparkF.sum(SparkF.when((yield_df['FYEAR'] != yield_df['MIN_FYEAR']) &
+                                                        (yield_df['FYEAR_CHANGE'] > long_seq_len), 1)\
+                                          .otherwise(0)).over(w3).alias('COUNT_LONG_GAPS'))
+
+    if (self.verbose > 2):
+      print('Data with duplicate sequences')
+      yield_df.filter(yield_df['COUNT_SHORT_SEQ'] > max_short_seqs).show()
+      yield_df.filter(yield_df['COUNT_LONG_SEQ'] > max_long_seqs).show()
+
+    # remove regions with many short sequences
+    yield_df = yield_df.filter(yield_df['COUNT_SHORT_SEQ'] <= max_short_seqs)
+    yield_df = yield_df.filter(yield_df['COUNT_SHORT_GAPS'] <= max_short_seqs)
+
+    # remove regions with long sequences
+    yield_df = yield_df.filter(yield_df['COUNT_LONG_SEQ'] <= max_long_seqs)
+    yield_df = yield_df.filter(yield_df['COUNT_LONG_GAPS'] <= max_long_seqs)
+
+    # remove data points, except SEQ_START, for remaining sequences
+    yield_df = yield_df.filter((yield_df['FYEAR'] == yield_df['SEQ_START']) |
+                               (yield_df['SEQ_LEN'] <= short_seq_len))
+
+    return yield_df.select(['IDREGION', 'FYEAR', 'YIELD'])
+
+  def preprocessYield(self, yield_df, crop_id, clean_data=False):
     """
     Yield preprocessing depends on the data format.
     Here we cover preprocessing for France (NUTS3), Germany (NUTS3) and the Netherlands (NUTS2).
@@ -277,6 +365,9 @@ class CYPDataPreprocessor:
 
     yield_df = yield_df.filter(yield_df.YIELD.isNotNull())
     yield_df = yield_df.withColumn("YIELD", yield_df["YIELD"].cast(SparkT.FloatType()))
+    if (clean_data):
+      yield_df = self.removeDuplicateYieldData(yield_df)
+
     yield_df = yield_df.filter(yield_df['YIELD'] > 0.0)
 
     return yield_df

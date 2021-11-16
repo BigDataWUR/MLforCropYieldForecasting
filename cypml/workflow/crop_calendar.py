@@ -76,6 +76,10 @@ def getCropCalendarPeriods(df):
 
   return cc_periods
 
+def getSeasonStartFilter(df):
+  """Filter for dekads after season start"""
+  return df.CAMPAIGN_DEKAD >= (df.START_DVS - 11)
+
 def getCountryCropCalendar(crop_cal):
   """Take averages to make the crop calendar per country"""
   crop_cal = crop_cal.withColumn('COUNTRY', SparkF.substring('IDREGION', 1, 2))

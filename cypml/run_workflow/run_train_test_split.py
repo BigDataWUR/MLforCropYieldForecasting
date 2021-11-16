@@ -27,6 +27,7 @@ def splitDataIntoTrainingTestSets(cyp_config, preprocessed_dfs, log_fh):
   nuts_level = cyp_config.getNUTSLevel()
   use_centroids = cyp_config.useCentroids()
   use_remote_sensing = cyp_config.useRemoteSensing()
+  use_gaes = cyp_config.useGAES()
   debug_level = cyp_config.getDebugLevel()
 
   yield_df = preprocessed_dfs['YIELD']
@@ -49,11 +50,19 @@ def splitDataIntoTrainingTestSets(cyp_config, preprocessed_dfs, log_fh):
   for ts_src in ts_data_sources:
     train_test_dfs[ts_src] = splitTrainingTest(ts_data_sources[ts_src], 'CAMPAIGN_YEAR', test_years)
 
-  # SOIL, CENTROIDS data are static.
+  # SOIL, GAES and CENTROIDS data are static.
   train_test_dfs['SOIL'] = [preprocessed_dfs['SOIL'], preprocessed_dfs['SOIL']]
+  if (use_gaes):
+    train_test_dfs['GAES'] = [preprocessed_dfs['GAES'], preprocessed_dfs['GAES']]
+
   if (use_centroids):
     train_test_dfs['CENTROIDS'] = [preprocessed_dfs['CENTROIDS'],
                                    preprocessed_dfs['CENTROIDS']]
+
+  # crop area
+  if (use_gaes):
+    crop_area_df = preprocessed_dfs['CROP_AREA']
+    train_test_dfs['CROP_AREA'] = splitTrainingTest(crop_area_df, 'FYEAR', test_years)
 
   # yield data
   train_test_dfs['YIELD'] = splitTrainingTest(yield_df, 'FYEAR', test_years)
@@ -62,7 +71,7 @@ def splitDataIntoTrainingTestSets(cyp_config, preprocessed_dfs, log_fh):
     for src in train_test_dfs:
       if (src in ts_data_sources):
         order_cols = ['IDREGION', 'CAMPAIGN_YEAR', 'CAMPAIGN_DEKAD']
-      elif ((src == 'YIELD') or (src == 'AREA_FRACTIONS')):
+      elif ((src == 'YIELD') or (src == 'CROP_AREA')):
         order_cols = ['IDREGION', 'FYEAR']
       else:
         order_cols = ['IDREGION']

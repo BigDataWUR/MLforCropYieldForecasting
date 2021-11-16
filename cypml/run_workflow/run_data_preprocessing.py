@@ -13,8 +13,10 @@ def preprocessData(cyp_config, cyp_preprocessor, data_dfs):
   crop_id = cyp_config.getCropID()
   nuts_level = cyp_config.getNUTSLevel()
   season_crosses_calyear = cyp_config.seasonCrossesCalendarYear()
+  clean_data = cyp_config.cleanData()
   use_centroids = cyp_config.useCentroids()
   use_remote_sensing = cyp_config.useRemoteSensing()
+  use_gaes = cyp_config.useGAES()
   debug_level = cyp_config.getDebugLevel()
 
   order_cols = ['IDREGION', 'CAMPAIGN_YEAR', 'CAMPAIGN_DEKAD']
@@ -69,6 +71,22 @@ def preprocessData(cyp_config, cyp_preprocessor, data_dfs):
   if (debug_level > 1):
     printPreprocessingInformation(soil_df, 'SOIL', order_cols)
 
+  # agro-environmental zones
+  if (use_gaes):
+    aez_df = data_dfs['GAES']
+    aez_df = cyp_preprocessor.preprocessGAES(aez_df, crop_id)
+    data_dfs['GAES'] = aez_df
+    if (debug_level > 1):
+      printPreprocessingInformation(aez_df, 'GAES', order_cols)
+
+    # crop area data
+    order_cols = ['IDREGION', 'FYEAR']
+    crop_area_df = data_dfs['CROP_AREA']
+    crop_area_df = cyp_preprocessor.preprocessCropArea(crop_area_df, crop_id)
+    data_dfs['CROP_AREA'] = crop_area_df
+    if (debug_level > 1):
+      printPreprocessingInformation(crop_area_df, 'CROP_AREA', order_cols)
+
   order_cols = ['IDREGION', 'FYEAR']
   # yield_data
   yield_df = data_dfs['YIELD']
@@ -76,7 +94,7 @@ def preprocessData(cyp_config, cyp_preprocessor, data_dfs):
     print('Yield before preprocessing')
     yield_df.show(10)
 
-  yield_df = cyp_preprocessor.preprocessYield(yield_df, crop_id)
+  yield_df = cyp_preprocessor.preprocessYield(yield_df, crop_id, clean_data)
   assert (yield_df is not None)
   data_dfs['YIELD'] = yield_df
   if (debug_level > 1):

@@ -16,9 +16,9 @@ def loadSavedPredictions(cyp_config, spark):
   debug_level = cyp_config.getDebugLevel()
 
   pred_file_path = cyp_config.getOutputPath()
-  pred_file = getPredictionFilename(crop, country, nuts_level, use_yield_trend,
-                                    early_season_prediction, early_season_end)
-  
+  pred_file = getPredictionFilename(crop, use_yield_trend,
+                                    early_season_prediction, early_season_end,
+                                    country, nuts_level)
   pred_file += '.csv'
   pd_ml_predictions = pd.read_csv(pred_file_path + '/' + pred_file, header=0)
 

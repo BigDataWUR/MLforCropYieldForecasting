@@ -17,8 +17,10 @@ class CYPDataLoader:
     """
     if (country_code is not None):
       datafile = data_path + '/' + src  + '_' + nuts + '_' + country_code + '.csv'
-    else:
+    elif (nuts is not None):
       datafile = data_path + '/' + src  + '_' + nuts + '.csv'
+    else:
+      datafile = data_path + '/' + src  + '.csv'
 
     if (self.verbose > 1):
       print('Data file name', '"' + datafile + '"')
@@ -41,10 +43,8 @@ class CYPDataLoader:
         df = self.loadFromCSVFile(data_path, src, nuts, country_code)
         src_dfs.append(df)
 
-    elif (isinstance(nuts_level, str)):
-      src_dfs = self.loadFromCSVFile(data_path, src, nuts_level, country_code)
     else:
-      src_dfs = None
+      src_dfs = self.loadFromCSVFile(data_path, src, nuts_level, country_code)
 
     return src_dfs
 
