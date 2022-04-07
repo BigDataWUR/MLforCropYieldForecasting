@@ -1,7 +1,7 @@
 # A weakly supervised framework for high resolution crop yield forecasts
 
 ## Naive Trend Model for NUTS2 to NUTS3 Disaggregation
-The notebook for weak supervision includes evaluation of the naive trend model.
+The notebook `dl_weak_supervision.ipynb` includes evaluation of the naive trend model.
 
 ## NUTS3 Trend Model and GBDT Model
 The NUTS3 models that use NUTS3 yield data are implemented in `mloptimized_combo.ipynb`.
