@@ -895,7 +895,7 @@ class CYPConfiguration:
     return self.eval_metrics
   
   def setEvaluationMetrics(self, metrics):
-    assert isinstance(estimators, dict)
+    assert isinstance(metrics, dict)
     self.eval_metrics = metrics
 
 """## Workflow
