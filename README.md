@@ -19,4 +19,4 @@ The weakly supervised models for Europe are implemented in `dl_weak_supervision_
 The notebook `dl_weak_supervision_US.ipynb` includes evaluation of the naive trend model.
 
 ## Sample data
-Sample data (for the US) can be found in [Zenodo] (https://doi.org/10.5281/zenodo.7751191).
+Sample data (for the US) can be found in [Zenodo](https://doi.org/10.5281/zenodo.7751191).
