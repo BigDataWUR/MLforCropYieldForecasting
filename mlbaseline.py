@@ -409,7 +409,7 @@ class CYPConfiguration:
         # gradient boosted decision trees
         'GBDT' : {
             'estimator' : GradientBoostingRegressor(learning_rate=0.01,
-                                                    subsample=0.8, loss='lad',
+                                                    subsample=0.8, loss='huber',
                                                     min_samples_leaf=5,
                                                     random_state=42),
             'fs_param_grid' : dict(estimator__max_depth=[5],
